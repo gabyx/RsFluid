@@ -1,0 +1,14 @@
+[flake8]
+max-line-length = 88
+hang-closing = false
+ignore =
+    # Line break before binary operator
+    W503,
+    # Line break occurred after a binary operator
+    W504,
+    # Continuation line with same indent as next logical line
+    E125,
+exclude =
+  .jenkins
+
+extend-ignore = E203
