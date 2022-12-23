@@ -1,8 +1,8 @@
-use rustofluid::log::{create_logger};
-use slog::{info, debug};
+use rustofluid::log::*;
 
 fn main() {
     let log = create_logger();
-    info!(log, "Logging ready!");
+    trace!(log, "Logging ready!");
     debug!(log, "Logging ready!");
+    error!(log, "Logging ready!");
 }
