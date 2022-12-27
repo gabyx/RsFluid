@@ -4,9 +4,7 @@
       "type": "shell",
       "command": "cargo",
       "args": ["make", "check"],
-      "problemMatcher": [
-        "$rustc"
-      ],
+      "problemMatcher": ["$rustc"],
       "group": "build",
       "label": "Check Code"
     },
@@ -14,9 +12,7 @@
       "type": "shell",
       "command": "cargo",
       "args": ["make", "format"],
-      "problemMatcher": [
-        "$rustc"
-      ],
+      "problemMatcher": ["$rustc"],
       "group": "build",
       "label": "Format Code"
     },
@@ -24,28 +20,23 @@
       "type": "shell",
       "command": "cargo",
       "args": ["make", "build"],
-      "problemMatcher": [
-        "$rustc"
-      ],
+      "problemMatcher": ["$rustc"],
       "group": "build",
       "label": "Build Code"
     },
     {
-      "problemMatcher": [
-        "$rustc"
-      ],
+      "problemMatcher": ["$rustc"],
       "group": "build",
       "label": "Format & Build",
-      "dependsOn":["Format Code", "Build Code"]
+      "dependsOn": ["Format Code", "Build Code"]
     },
     {
-      "problemMatcher": [
-        "$rustc"
-      ],
+      "problemMatcher": ["$rustc"],
       "command": "cargo",
       "args": ["run", "rustofluid"],
       "group": "build",
-      "label": "Build & Run",
+      "options": { "env": { "RUST_BACKTRACE": "1" } },
+      "label": "Build & Run"
     }
   ]
 }

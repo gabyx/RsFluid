@@ -3,8 +3,8 @@ use slog::{info, Logger};
 use crate::types::{Scalar, Vector2};
 
 pub trait Integrate {
-    fn integrate(&mut self, _dt: Scalar, _gravity: Vector2) {}
-    fn solve_incompressibility(&mut self, _dt: Scalar, _iterations: u64) {}
+    fn integrate(&mut self, log: &Logger, _dt: Scalar, _gravity: Vector2) {}
+    fn solve_incompressibility(&mut self, log: &Logger, _dt: Scalar, _iterations: u64) {}
 }
 
 pub struct TimeStepper<'a> {
@@ -51,17 +51,15 @@ impl<'a> TimeStepper<'a> {
         );
 
         for obj in self.objects.iter_mut() {
-            obj.integrate(dt, self.gravity);
+            obj.integrate(self.log, dt, self.gravity);
         }
-
-        self.t = self.t + dt;
     }
 
     fn solve_incompressibility(&mut self, dt: Scalar) {
         info!(self.log, "Solve incompressibility at t: '{:0.3}'.", self.t,);
 
         for obj in self.objects.iter_mut() {
-            obj.solve_incompressibility(dt, self.incompress_iters);
+            obj.solve_incompressibility(self.log, dt, self.incompress_iters);
         }
     }
 }

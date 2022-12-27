@@ -1,9 +1,9 @@
-use std::ops::{Index, IndexMut};
+use slog::{debug, info, Logger};
 
 use crate::solver::timestepper::Integrate;
 use crate::types::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CellTypes {
     Solid,
     Fluid,
@@ -11,10 +11,10 @@ pub enum CellTypes {
 
 #[derive(Clone, Debug, Copy)]
 pub struct GlobalIndex(usize, usize);
+pub struct InsideIndex(usize, usize);
 
 #[derive(Clone, Debug)]
 pub struct Cell {
-
     // Velocity x,y:
     // - v_x is at the location (h/2, 0),
     // - v_y is at the location (0, h/2),
@@ -68,61 +68,143 @@ impl Grid {
         dim_y += 2;
         let n = dim_x * dim_y;
 
-        let mut cells = vec![Cell::new(GlobalIndex(0, 0)); n];
-
-        for i in 0..dim_x {
-            for j in 0..dim_y {
-                cells[i + j * dim_x] = Cell::new(GlobalIndex(i, j));
-            }
-        }
-
-        return Grid {
+        let mut grid = Grid {
             cell_width,
             dim_x,
             dim_y,
-            cells,
+            cells: vec![Cell::new(GlobalIndex(0, 0)); n],
         };
+
+        // Setup grid.
+        for i in 0..dim_x {
+            for j in 0..dim_y {
+                let mode = if grid.is_border(GlobalIndex(i, j)) {
+                    CellTypes::Solid
+                } else {
+                    CellTypes::Fluid
+                };
+
+                let mut cell = Cell::new(GlobalIndex(i, j));
+                cell.mode = mode;
+
+                grid.cells[i + j * dim_x] = cell;
+            }
+        }
+
+        return grid;
+    }
+
+    fn is_border(&self, index: GlobalIndex) -> bool {
+        return index.0 == 0
+            || index.1 == 0
+            || index.0 == self.dim_x - 1
+            || index.1 == self.dim_y - 1;
     }
 }
 
-impl Index<GlobalIndex> for Grid {
-    type Output = Cell;
-    fn index<'a>(&'a self, index: GlobalIndex) -> &'a Cell {
-        return &self.cells[index.0 + index.1 * self.dim_x];
+trait CellGetter<Index> {
+    type Output;
+    fn cell(self, index: Index) -> Self::Output;
+}
+
+// CellGetter::Self == &Grid
+impl<'a> CellGetter<GlobalIndex> for &'a Grid {
+    type Output = Option<&'a Cell>;
+
+    fn cell(self, index: GlobalIndex) -> Self::Output {
+        if index.0 < self.dim_x && index.1 < self.dim_y {
+            return Some(&self.cells[index.0 + index.1 * self.dim_x]);
+        }
+        return None;
     }
 }
 
-impl IndexMut<GlobalIndex> for Grid {
-    fn index_mut<'a>(&'a mut self, index: GlobalIndex) -> &'a mut Cell {
-        return &mut self.cells[index.0 + index.1 * self.dim_x];
+// CellGetter::Self == &mut Grid
+impl<'a> CellGetter<GlobalIndex> for &'a mut Grid {
+    type Output = Option<&'a mut Cell>;
+
+    fn cell(self, index: GlobalIndex) -> Self::Output {
+        if index.0 < self.dim_x && index.1 < self.dim_y {
+            return Some(&mut self.cells[index.0 + index.1 * self.dim_x]);
+        }
+        return None;
     }
 }
 
-type InsideIndex = (usize, usize);
+// CellGetter::Self == &Grid
+impl<'a> CellGetter<InsideIndex> for &'a Grid {
+    type Output = Option<&'a Cell>;
 
-impl Index<InsideIndex> for Grid {
-    type Output = Cell;
-    fn index<'a>(&'a self, index: InsideIndex) -> &'a Cell {
-        return &self[GlobalIndex(index.0 + 1, index.1 + 1)];
+    fn cell(self, index: InsideIndex) -> Self::Output {
+        let index = GlobalIndex(index.0 + 1, index.1 + 1);
+        return self.cell(index);
     }
 }
 
-impl IndexMut<InsideIndex> for Grid {
-    fn index_mut<'a>(&'a mut self, index: InsideIndex) -> &'a mut Cell {
-        return &mut self[GlobalIndex(index.0 + 1, index.1 + 1)];
+// CellGetter::Self == &mut Grid
+impl<'a> CellGetter<InsideIndex> for &'a mut Grid {
+    type Output = Option<&'a mut Cell>;
+
+    fn cell(self, index: InsideIndex) -> Self::Output {
+        let index = GlobalIndex(index.0 + 1, index.1 + 1);
+        return self.cell(index);
     }
 }
 
 impl Integrate for Cell {
-    fn integrate(&mut self, dt: Scalar, gravity: Vector2) {
+    fn integrate(&mut self, log: &Logger, dt: Scalar, gravity: Vector2) {
         self.velocity.front = self.velocity.back + dt * gravity;
     }
 }
 
 impl Integrate for Grid {
-    fn integrate(&mut self, dt: Scalar, gravity: Vector2) {
-        for cell in &mut self.cells {
-            cell.integrate(dt, gravity); // integrate
+    fn integrate(&mut self, log: &Logger, dt: Scalar, gravity: Vector2) {
+        debug!(log, "Integrate grid.");
+
+        for cell in self.cells.iter_mut() {
+            cell.integrate(log, dt, gravity); // integrate
+        }
+
+        self.enforce_solid_constraints(log);
+    }
+}
+
+impl Grid {
+    fn enforce_solid_constraints(&mut self, log: &Logger) {
+        debug!(log, "Enforce solid constraints on solid cells.");
+
+        // Enforce solid constraint over all cells which are solid.
+        for i in 0..self.cells.len() {
+            let index: GlobalIndex;
+            {
+                let mut cell = &mut self.cells[i];
+                if cell.mode != CellTypes::Solid {
+                    continue;
+                }
+
+                // Cell is solid, so constrain all involved staggered velocity.
+                // to the last one.
+                cell.velocity.front = cell.velocity.back;
+                index = cell.index;
+            }
+
+            for idx in 0..2usize {
+                let mut nb_index = index;
+
+                match idx {
+                    0 => nb_index.0 += 1, // x neighbor.
+                    1 => nb_index.1 += 1, // y neighbor.
+                    _ => {}
+                }
+
+                let cell = self.cell(nb_index);
+                match cell {
+                    Some(c) => {
+                        c.velocity.front[idx] = c.velocity.back[idx]; // reset only the x,y direction.
+                    }
+                    None => {}
+                }
+            }
         }
     }
 }
