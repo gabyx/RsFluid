@@ -1,13 +1,23 @@
-
 use rustofluid::log::*;
-use rustofluid::solver::grid;
+use rustofluid::solver::grid::Grid;
+use rustofluid::solver::timestepper::{Integrate, TimeStepper};
+use rustofluid::types::*;
 
 fn main() {
     let log = create_logger();
 
-    trace!(log, "Logging ready!");
-    debug!(log, "Logging ready!");
-    error!(log, "Logging ready!");
+    let dt = 0.001;
+    let gravity = Vector2::new(0.0, -9.81);
 
-    let g: grid::Grid<10,10> = grid::Grid::new();
+    let objs: Vec<Box<dyn Integrate>> = vec![Box::new(Grid::new(100, 100, 1.0))];
+
+    let mut timestepper = TimeStepper::new(&log, gravity, 1000, objs);
+
+    let t_end = 2.0;
+
+    let n_steps = (t_end / dt) as u64;
+
+    for _ in 0..n_steps {
+        timestepper.compute_step(dt);
+    }
 }
