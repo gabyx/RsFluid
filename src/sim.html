@@ -148,7 +148,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 						var sx1 = this.s[(i+1)*n + j];
 						var sy0 = this.s[i*n + j-1];
 						var sy1 = this.s[i*n + j+1];
-						var s = sx0 + sx1 + sy0 + sy1;
+						s += sx0 + sx1 + sy0 + sy1;
 						if (s == 0.0)
 							continue;
 

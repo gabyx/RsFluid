@@ -1,4 +1,4 @@
-use slog::{debug, info, Logger};
+use slog::{debug, info, warn, Logger};
 
 use crate::solver::timestepper::Integrate;
 use crate::types::*;
@@ -152,7 +152,7 @@ impl<'a> CellGetter<InsideIndex> for &'a mut Grid {
 }
 
 impl Integrate for Cell {
-    fn integrate(&mut self, log: &Logger, dt: Scalar, gravity: Vector2) {
+    fn integrate(&mut self, _log: &Logger, dt: Scalar, gravity: Vector2) {
         self.velocity.front = self.velocity.back + dt * gravity;
     }
 }
@@ -167,9 +167,115 @@ impl Integrate for Grid {
 
         self.enforce_solid_constraints(log);
     }
+
+    fn solve_incompressibility(
+        &mut self,
+        log: &Logger,
+        dt: Scalar,
+        iterations: u64,
+        density: Scalar,
+    ) {
+        let overrlaxation = 1.9;
+        let cp = density * self.cell_width / dt;
+        let l = self.cells.len();
+
+        for _iter in 0..iterations {
+            for i in 0..l {
+                let index = self.cells[i].index;
+
+                if self.is_border(index) || self.cells[i].mode == CellTypes::Solid {
+                    continue;
+                }
+
+                let (cell, nbs) = self.get_neighbors(index);
+                let mut s = 1.0;
+
+                for d in 0..2 {
+                    s += nbs[d]
+                        .iter()
+                        .filter_map(|c| return *c)
+                        .filter(|c| c.mode == CellTypes::Fluid)
+                        .count() as Scalar;
+                }
+
+                if s == 0.0 {
+                    warn!(log, "Solid count is 0.0 for {:?}", index);
+                    continue;
+                }
+
+                let get_vel = |c: Option<&Cell>, d: usize| {
+                    return match c {
+                        Some(c) => c.velocity.front[d],
+                        None => {
+                            warn!(log, "Null velocity requested");
+                            0.0
+                        }
+                    };
+                };
+
+                let mut div: Scalar = 0.0;
+                for d in 0..2 {
+                    div += get_vel(nbs[d][1], d) - get_vel(Some(cell), d)
+                }
+
+                let mut p = -div / s;
+                p *= overrlaxation;
+
+                // let set_p = |c: &mut Cell| c.pressure += cp * p;
+                // set_p(cell);
+            }
+        }
+
+        // for (var iter = 0; iter < numIters; iter++) {
+
+        // 	for (var i = 1; i < this.numX-1; i++) {
+        // 		for (var j = 1; j < this.numY-1; j++) {
+
+        // 			if (this.s[i*n + j] == 0.0)
+        // 				continue;
+
+        // 			var s = this.s[i*n + j];
+        // 			var sx0 = this.s[(i-1)*n + j];
+        // 			var sx1 = this.s[(i+1)*n + j];
+        // 			var sy0 = this.s[i*n + j-1];
+        // 			var sy1 = this.s[i*n + j+1];
+        // 			var s = sx0 + sx1 + sy0 + sy1;
+        // 			if (s == 0.0)
+        // 				continue;
+
+        // 			var div = this.u[(i+1)*n + j] - this.u[i*n + j] +
+        // 				this.v[i*n + j+1] - this.v[i*n + j];
+
+        // 			var p = -div / s;
+        // 			p *= scene.overRelaxation;
+        // 			this.p[i*n + j] += cp * p;
+
+        // 			this.u[i*n + j] -= sx0 * p;
+        // 			this.u[(i+1)*n + j] += sx1 * p;
+        // 			this.v[i*n + j] -= sy0 * p;
+        // 			this.v[i*n + j+1] += sy1 * p;
+        // 		}
+        // 	}
+    }
 }
 
 impl Grid {
+    fn get_neighbors(&self, index: GlobalIndex) -> (&Cell, [[Option<&Cell>; 2]; 2]) {
+        return (
+            self.cell(index).expect("Wrong index"),
+            [
+                [
+                    self.cell(GlobalIndex(index.0 - 1, index.1)),
+                    self.cell(GlobalIndex(index.0 + 1, index.1)),
+                ],
+                [
+                    self.cell(GlobalIndex(index.0, index.1 - 1)),
+                    self.cell(GlobalIndex(index.0, index.1 + 1)),
+                ],
+            ],
+        );
+    }
+
     fn enforce_solid_constraints(&mut self, log: &Logger) {
         debug!(log, "Enforce solid constraints on solid cells.");
 
@@ -183,7 +289,8 @@ impl Grid {
                 }
 
                 // Cell is solid, so constrain all involved staggered velocity.
-                // to the last one.
+                // to the last one and also for the neighbors in x and y direction.
+
                 cell.velocity.front = cell.velocity.back;
                 index = cell.index;
             }
