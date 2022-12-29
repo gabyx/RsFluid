@@ -12,10 +12,12 @@ pub fn create_logger() -> slog::Logger {
         .use_custom_timestamp(no_out)
         .build()
         .fuse();
-    let drain = slog_async::Async::new(fmt).build().fuse();
+    let drain = slog_async::Async::new(fmt).chan_size(5_000_000).build().fuse();
 
     return slog::Logger::root(drain, o!());
 }
+
+pub type Logger = slog::Logger;
 
 /// Log trace level record
 #[macro_export]
@@ -60,10 +62,10 @@ pub use log_info as info;
 #[macro_export]
 macro_rules! log_warn(
     ($l:expr, #$tag:expr, $($args:tt)+) => {
-        slog::log!($l, slog::Level::Warn, $tag, $($args)+)
+        slog::log!($l, slog::Level::Warning, $tag, $($args)+)
     };
     ($l:expr, $($args:tt)+) => {
-        slog::log!($l, slog::Level::Warn, "", $($args)+)
+        slog::log!($l, slog::Level::Warning, "", $($args)+)
     };
 );
 
@@ -81,3 +83,18 @@ macro_rules! log_error(
 );
 
 pub use log_error as error;
+
+/// Log panic level record
+#[macro_export]
+macro_rules! log_panic(
+    ($l:expr, #$tag:expr, $($args:tt)+) => {
+        slog::log!($l, slog::Level::Error, $tag, $($args)+);
+        panic!();
+    };
+    ($l:expr, $($args:tt)+) => {
+        slog::log!($l, slog::Level::Error, "", $($args)+);
+        panic!();
+    };
+);
+
+pub use log_panic;

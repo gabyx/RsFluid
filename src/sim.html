@@ -160,8 +160,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 						this.p[i*n + j] += cp * p;
 
 						this.u[i*n + j] -= sx0 * p;
-						this.u[(i+1)*n + j] += sx1 * p;
 						this.v[i*n + j] -= sy0 * p;
+
+						this.u[(i+1)*n + j] += sx1 * p;
 						this.v[i*n + j+1] += sy1 * p;
 					}
 				}
