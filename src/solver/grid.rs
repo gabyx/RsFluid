@@ -1,4 +1,4 @@
-use crate::log::{debug, log_panic, warn, Logger};
+use crate::log::{debug, warn, Logger};
 use crate::solver::timestepper::Integrate;
 use crate::types::*;
 use std::num::Wrapping;
@@ -159,72 +159,48 @@ impl Grid {
     }
 }
 
-trait CellGetter<Index> {
-    type Output;
-    type OutputOpt = Option<Self::Output>;
+pub trait CellGetter<'a, I> {
+    type Item: 'a;
 
-    fn cell(self, index: Index) -> Self::Output;
-    fn cell_opt(self, index: Index) -> Self::OutputOpt;
+    type Output = &'a Self::Item;
+    type OutputMut = &'a mut Self::Item;
+
+    fn cell(&'a self, index: I) -> Self::Output;
+    fn cell_mut(&'a mut self, index: I) -> Self::OutputMut;
+
+    type OutputOpt = Option<&'a Self::Item>;
+    type OutputMutOpt = Option<&'a mut Self::Item>;
+
+    fn cell_opt(&'a self, index: Index2) -> Self::OutputOpt;
+    fn cell_mut_opt(&'a mut self, index: Index2) -> Self::OutputMutOpt;
 }
 
-// CellGetter::Self == &Grid
-impl<'a> CellGetter<Index2> for &'a Grid {
-    type Output = &'a Cell;
+impl<'t> CellGetter<'t, Index2> for Grid {
+    type Item = Cell;
 
-    fn cell(self, index: Index2) -> Self::Output {
+    fn cell(&'t self, index: Index2) -> Self::Output {
         return &self.cells[index.x + index.y * self.dim.x];
     }
 
-    fn cell_opt(self, index: Index2) -> Self::OutputOpt {
-        if Grid::is_inside(self.dim, index) {
-            return Some(self.cell(index));
-        }
-        return None;
-    }
-}
-
-// CellGetter::Self == &mut Grid
-impl<'a> CellGetter<Index2> for &'a mut Grid {
-    type Output = &'a mut Cell;
-
-    fn cell(self, index: Index2) -> Self::Output {
+    fn cell_mut(&'t mut self, index: Index2) -> Self::OutputMut {
         return &mut self.cells[index.x + index.y * self.dim.x];
     }
 
-    fn cell_opt(self, index: Index2) -> Self::OutputOpt {
+    fn cell_opt(&'t self, index: Index2) -> Self::OutputOpt {
         if Grid::is_inside(self.dim, index) {
             return Some(self.cell(index));
         }
         return None;
     }
-}
 
-trait CellIndexGetter<Index> {
-    fn cell_index_internal<const N: usize>(
-        self,
-        indices: &[Option<Index2>; N],
-    ) -> [Option<usize>; N];
-    fn cell_index(self, index: Index) -> Option<Index>;
-}
-
-impl CellIndexGetter<Index2> for &Grid {
-    fn cell_index_internal<const N: usize>(
-        self,
-        indices: &[Option<Index2>; N],
-    ) -> [Option<usize>; N] {
-        return indices.map(|index| match index {
-            Some(index) => Some(index.x + index.y * self.dim.x),
-            None => None,
-        });
-    }
-
-    fn cell_index(self, index: Index2) -> Option<Index2> {
+    fn cell_mut_opt(&'t mut self, index: Index2) -> Self::OutputMutOpt {
         if Grid::is_inside(self.dim, index) {
-            return Some(index);
+            return Some(self.cell_mut(index));
         }
         return None;
     }
 }
+
 
 impl Grid {
     pub fn modify_cells<F, const N: usize>(&mut self, indices: [usize; N], mut f: F) -> ()
@@ -263,7 +239,6 @@ impl Integrate for Grid {
         let overrelaxation = 1.9;
 
         let cp = density * self.cell_width / dt;
-        let l = self.cells.len();
 
         for _iter in 0..iterations {
             for it in self.to_index_iter() {
@@ -292,7 +267,7 @@ impl Integrate for Grid {
                     continue;
                 }
 
-                let get_vel = |c: &mut Cell, d: usize| {
+                let get_vel = |c: &Cell, d: usize| {
                     return c.velocity.front[d];
                 };
 
@@ -304,7 +279,7 @@ impl Integrate for Grid {
                 let mut p = -div / s;
                 p *= overrelaxation;
 
-                self.cell(index).pressure += cp * p;
+                self.cell_mut(index).pressure += cp * p;
                 // set_p(cell);
             }
         }
@@ -318,10 +293,9 @@ impl Grid {
         // Enforce solid constraint over all cells which are solid.
         for it in self.to_index_iter() {
             let index = it.index;
-            let dim = self.dim;
 
             {
-                let cell = self.cell(index);
+                let cell = self.cell_mut(index);
                 if cell.mode != CellTypes::Solid {
                     continue;
                 }
@@ -340,7 +314,7 @@ impl Grid {
                     _ => {}
                 }
 
-                let cell = self.cell_opt(nb_index);
+                let cell = self.cell_mut_opt(nb_index);
                 match cell {
                     Some(c) => {
                         c.velocity.front[idx] = c.velocity.back[idx]; // reset only the x,y direction.
