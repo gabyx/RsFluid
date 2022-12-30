@@ -156,9 +156,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 							this.v[i*n + j+1] - this.v[i*n + j];
 
 						var p = -div / s;
-						p *= scene.overRelaxation;
 						this.p[i*n + j] += cp * p;
 
+						p *= scene.overRelaxation;
 						this.u[i*n + j] -= sx0 * p;
 						this.v[i*n + j] -= sy0 * p;
 
@@ -388,12 +388,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		}
 		else if (sceneNr == 1 || sceneNr == 3) { // vortex shedding
 
-			var inVel = 2.0;
+			var inVel = 5.0;
 			for (var i = 0; i < f.numX; i++) {
 				for (var j = 0; j < f.numY; j++) {
+
 					var s = 1.0;	// fluid
+
 					if (i == 0 || j == 0 || j == f.numY-1)
 						s = 0.0;	// solid
+
 					f.s[i*n + j] = s
 
 					if (i == 1) {

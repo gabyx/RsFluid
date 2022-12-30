@@ -110,10 +110,10 @@ impl Grid {
 
         // Setup grid.
         for it in grid.to_index_iter() {
-            let mode = if Grid::is_border(grid.dim, it.index) {
-                CellTypes::Solid
-            } else {
+            let mode = if Grid::is_inside_border(grid.dim, it.index) {
                 CellTypes::Fluid
+            } else {
+                CellTypes::Solid
             };
 
             let mut cell = Cell::new(it.index);
@@ -138,9 +138,8 @@ impl Grid {
         return index < dim;
     }
 
-    fn is_border(dim: Dimension2, index: Index2) -> bool {
-        return Grid::is_inside(dim, index)
-            && (index == Index2::zeros() || index == dim - Index2::new(1, 1));
+    fn is_inside_border(dim: Dimension2, index: Index2) -> bool {
+        return index > Index2::zeros() && index < (dim - Index2::new(1, 1));
     }
 
     fn get_neighbors_indices(index: Index2) -> [[Index2; 2]; 2] {
@@ -148,11 +147,13 @@ impl Grid {
 
         return [
             [
+                // Negative neighbors.
                 Index2::new(decrement(index.x), index.y),
-                Index2::new(index.y + 1, index.y),
+                Index2::new(index.x, decrement(index.y)),
             ],
             [
-                Index2::new(index.x, decrement(index.y)),
+                // Positive neighbors.
+                Index2::new(index.x + 1, index.y),
                 Index2::new(index.x, index.y + 1),
             ],
         ];
@@ -187,20 +188,13 @@ impl<'t> CellGetter<'t, Index2> for Grid {
     }
 
     fn cell_opt(&'t self, index: Index2) -> Self::OutputOpt {
-        if Grid::is_inside(self.dim, index) {
-            return Some(self.cell(index));
-        }
-        return None;
+        return Grid::is_inside(self.dim, index).then(|| self.cell(index));
     }
 
     fn cell_mut_opt(&'t mut self, index: Index2) -> Self::OutputMutOpt {
-        if Grid::is_inside(self.dim, index) {
-            return Some(self.cell_mut(index));
-        }
-        return None;
+        return Grid::is_inside(self.dim, index).then(|| self.cell_mut(index));
     }
 }
-
 
 impl Grid {
     pub fn modify_cells<F, const N: usize>(&mut self, indices: [usize; N], mut f: F) -> ()
@@ -236,7 +230,7 @@ impl Integrate for Grid {
         iterations: u64,
         density: Scalar,
     ) {
-        let overrelaxation = 1.9;
+        let r = 1.9; // Overrelaxation factor.
 
         let cp = density * self.cell_width / dt;
 
@@ -245,42 +239,57 @@ impl Integrate for Grid {
                 let index = it.index;
                 let dim = self.dim;
 
-                debug!(log, "Cell: {:?}", index);
-
-                if Grid::is_border(dim, index) || self.cell(index).mode == CellTypes::Solid {
+                if !Grid::is_inside_border(dim, index) || self.cell(index).mode == CellTypes::Solid {
                     continue;
                 }
 
-                let nbs = Grid::get_neighbors_indices(index);
-                let mut s = 1.0;
+                let s_factor = |index: Index2| {
+                    return if self.cell(index).mode == CellTypes::Solid {
+                        0.0
+                    } else {
+                        1.0
+                    };
+                };
 
-                for d in 0..2 {
-                    s += nbs[d]
-                        .iter()
-                        .filter(|c| Grid::is_inside(dim, **c))
-                        .filter(|c| self.cell(**c).mode == CellTypes::Fluid)
-                        .count() as Scalar;
+                let nbs = Grid::get_neighbors_indices(index);
+
+                // Normalization values `s`
+                // for negative/positive neighbors.
+                // - 0: solid, 1: fluid.
+                let mut nbs_s = [Vector2::zeros(), Vector2::zeros()];
+                let mut s = 0.0;
+
+                for dir in 0..2 {
+                    nbs_s[dir] = Vector2::new(s_factor(nbs[dir][0]), s_factor(nbs[dir][1]));
+                    s += nbs_s[dir].sum();
                 }
 
                 if s == 0.0 {
-                    warn!(log, "Fluid count is 0.0 for {:?}", index);
+                    warn!(log, "Fluid in-face count is 0.0 for {:?}", index);
                     continue;
                 }
 
-                let get_vel = |c: &Cell, d: usize| {
-                    return c.velocity.front[d];
+                let get_vel = |index: Index2, dir: usize| {
+                    return self.cell(index).velocity.front[dir];
                 };
 
-                let mut div: Scalar = 0.0;
-                for d in 0..2 {
-                    div += get_vel(self.cell(nbs[d][1]), d) - get_vel(self.cell(index), d)
+                let mut div: Scalar = 0.0; // Net outflow on this cell.
+                let pos_idx = 1usize;
+                let nbs_pos = &nbs[pos_idx];
+                for xy in 0..2 {
+                    div += get_vel(nbs_pos[xy], xy) - get_vel(index, xy)
                 }
 
-                let mut p = -div / s;
-                p *= overrelaxation;
+                // Normalize outflow to the cells we can control.
+                let p = div / s;
+                self.cell_mut(index).pressure -= cp * p;
 
-                self.cell_mut(index).pressure += cp * p;
-                // set_p(cell);
+                // Add outflow-part to inflows to reach net 0-outflow.
+                self.cell_mut(index).velocity.front += r * nbs_s[0] * p;
+
+                // Subtract outflow-part to outflows to reach net 0-outflow.
+                self.cell_mut(nbs[pos_idx][0]).velocity.front.x -= r * nbs_s[pos_idx].x * p;
+                self.cell_mut(nbs[pos_idx][1]).velocity.front.y -= r * nbs_s[pos_idx].y * p;
             }
         }
     }

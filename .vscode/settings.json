@@ -3,6 +3,7 @@
         "curr",
         "frontback",
         "incompress",
+        "Overrelaxation",
         "Timestep",
         "timestepper"
     ]
