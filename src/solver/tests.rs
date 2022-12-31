@@ -24,18 +24,23 @@ mod tests {
 
         assert!(val == 0.0);
 
-      //   | 0,1 | 1,1 |
-      // 1 |- 3 -|- 4 -|
-      //   | 0,0 | 0,1 |
-      //   |- 1 -|- 2 -|
-      //   0 ----1---->2
+        //   | 0,1 | 1,1 |
+        // 1 |- 3 -|- 4 -|
+        //   | 0,0 | 0,1 |
+        //   |- 1 -|- 2 -|
+        //   0 ----1---->2
 
-        grid.cell_mut(idx!(0, 0)).velocity.back = Vector2::new(1.0, 1.0);
-        grid.cell_mut(idx!(0, 1)).velocity.back = Vector2::new(2.0, 1.0);
-        grid.cell_mut(idx!(1, 0)).velocity.back = Vector2::new(3.0, 1.0);
-        grid.cell_mut(idx!(1, 1)).velocity.back = Vector2::new(4.0, 1.0);
+        grid.cell_mut(idx!(0, 0)).velocity.back = Vector2::new(-1.0, 1.0);
+        grid.cell_mut(idx!(0, 1)).velocity.back = Vector2::new(-1.0, 2.0);
+        grid.cell_mut(idx!(1, 0)).velocity.back = Vector2::new(-1.0, 3.0);
+        grid.cell_mut(idx!(1, 1)).velocity.back = Vector2::new(-1.0, 4.0);
+        assert!(grid.cell(idx!(0, 0)).velocity.back == Vector2::new(-1.0, 1.0));
+        assert!(grid.cell(idx!(0, 1)).velocity.back == Vector2::new(-1.0, 2.0));
+        assert!(grid.cell(idx!(1, 0)).velocity.back == Vector2::new(-1.0, 3.0));
+        assert!(grid.cell(idx!(1, 1)).velocity.back == Vector2::new(-1.0, 4.0));
 
-        let val = grid.sample_field(Vector2::new(1.0, 1.0), 0, sample_back_vel);
+        let eps = 0.00001;
+        let val = grid.sample_field(Vector2::new(1.0, 1.0 - eps), 1, sample_back_vel);
         assert!(val != 0.0);
     }
 }
