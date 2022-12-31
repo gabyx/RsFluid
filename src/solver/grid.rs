@@ -52,19 +52,27 @@ impl Cell {
 
 pub struct Grid {
     pub cell_width: Scalar,
-    pub dim: Dimension2,
+    pub dim: Index2,
 
     cells: Vec<Cell>,
+
+    extent: Vector2,
+
+    // Grid offsets for each axis of the velocity in the cells..
+    offsets: [Vector2; 2],
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct GridIndex {
     pub index: Index2,
-    dim: Dimension2,
+    dim: Index2,
 }
 
 pub struct GridIndexIterator {
     curr: GridIndex,
+
+    min: Index2,
+    max: Index2,
 }
 
 impl GridIndex {
@@ -77,18 +85,17 @@ impl Iterator for GridIndexIterator {
     type Item = GridIndex;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let curr = self.curr;
+        let curr = self.curr; // Copy current.
+
+        // Advance to next cell.
         let next = &mut self.curr;
-
-        // Advance the ite
         next.index.x += 1;
-
-        if next.index.x >= next.dim.x {
+        if next.index.x >= self.max.x {
             next.index.y += 1;
-            next.index.x = 0;
+            next.index.x = self.min.x;
         }
 
-        if Grid::is_inside(curr.dim, curr.index) {
+        if Grid::is_inside_range(self.min, self.max, curr.index) {
             return Some(curr);
         }
 
@@ -102,10 +109,18 @@ impl Grid {
         dim_y += 2;
         let n = dim_x * dim_y;
 
+        let h_2 = cell_width as Scalar * 0.5;
+        let dim = Index2::new(dim_x, dim_y);
+        let extent = dim.cast::<Scalar>() * cell_width;
+
         let mut grid = Grid {
             cell_width,
-            dim: Dimension2::new(dim_x, dim_y),
+            dim: Index2::new(dim_x, dim_y),
             cells: vec![Cell::new(Index2::new(0, 0)); n],
+
+            extent,
+            // `x`-values lie at offest `(0, h/2)` and `y`-values at `(h/2, 0)`.
+            offsets: [Vector2::new(0.0, h_2), Vector2::new(h_2, 0.0)],
         };
 
         // Setup grid.
@@ -131,14 +146,37 @@ impl Grid {
                 index: Index2::new(0, 0),
                 dim: self.dim,
             },
+            min: Index2::new(0, 0),
+            max: self.dim,
         };
     }
 
-    pub fn is_inside(dim: Dimension2, index: Index2) -> bool {
-        return index < dim;
+    fn to_inside_index_iter(&self) -> GridIndexIterator {
+        return GridIndexIterator {
+            curr: GridIndex {
+                index: Index2::new(1, 1),
+                dim: self.dim,
+            },
+            min: Index2::new(1, 1),
+            max: self.dim - Index2::new(1, 1),
+        };
     }
 
-    fn is_inside_border(dim: Dimension2, index: Index2) -> bool {
+    pub fn clamp_to_range<T>(min: Vector2T<T>, max: Vector2T<T>, index: Vector2T<T>) -> Vector2T<T>
+    where
+        T: nalgebra::Scalar + PartialOrd + Copy,
+    {
+        return Vector2T::<T>::new(
+            nalgebra::clamp(index.x, min.x, max.x),
+            nalgebra::clamp(index.y, min.y, max.y),
+        );
+    }
+
+    pub fn is_inside_range(min: Index2, max: Index2, index: Index2) -> bool {
+        return index < max && index >= min;
+    }
+
+    fn is_inside_border(dim: Index2, index: Index2) -> bool {
         return index > Index2::zeros() && index < (dim - Index2::new(1, 1));
     }
 
@@ -179,20 +217,21 @@ pub trait CellGetter<'a, I> {
 impl<'t> CellGetter<'t, Index2> for Grid {
     type Item = Cell;
 
-    fn cell(&'t self, index: Index2) -> Self::Output {
+    fn cell(&'t self, index: Index2) -> &Cell {
         return &self.cells[index.x + index.y * self.dim.x];
     }
 
-    fn cell_mut(&'t mut self, index: Index2) -> Self::OutputMut {
+    fn cell_mut(&'t mut self, index: Index2) -> &mut Cell {
         return &mut self.cells[index.x + index.y * self.dim.x];
     }
 
-    fn cell_opt(&'t self, index: Index2) -> Self::OutputOpt {
-        return Grid::is_inside(self.dim, index).then(|| self.cell(index));
+    fn cell_opt(&'t self, index: Index2) -> Option<&Cell> {
+        return Grid::is_inside_range(Index2::zeros(), self.dim, index).then(|| self.cell(index));
     }
 
-    fn cell_mut_opt(&'t mut self, index: Index2) -> Self::OutputMutOpt {
-        return Grid::is_inside(self.dim, index).then(|| self.cell_mut(index));
+    fn cell_mut_opt(&'t mut self, index: Index2) -> Option<&mut Cell> {
+        return Grid::is_inside_range(Index2::zeros(), self.dim, index)
+            .then(|| self.cell_mut(index));
     }
 }
 
@@ -235,11 +274,17 @@ impl Integrate for Grid {
         let cp = density * self.cell_width / dt;
 
         for _iter in 0..iterations {
-            for it in self.to_index_iter() {
+            for it in self.to_inside_index_iter() {
                 let index = it.index;
                 let dim = self.dim;
 
-                if !Grid::is_inside_border(dim, index) || self.cell(index).mode == CellTypes::Solid {
+                assert!(
+                    Grid::is_inside_border(dim, index),
+                    "Index {} is not inside",
+                    index
+                );
+
+                if self.cell(index).mode == CellTypes::Solid {
                     continue;
                 }
 
@@ -292,10 +337,55 @@ impl Integrate for Grid {
                 self.cell_mut(nbs[pos_idx][1]).velocity.front.y -= r * nbs_s[pos_idx].y * p;
             }
         }
+
+        for it in self.to_index_iter() {
+            self.cell_mut(it.index).velocity.swap();
+        }
     }
 }
 
 impl Grid {
+    pub fn sample_field<F: Fn(&Cell, usize) -> Scalar>(
+        &self,
+        mut pos: Vector2,
+        dir: usize,
+        get_val: F,
+    ) -> Scalar {
+        let h = self.cell_width;
+        let h_inv = 1.0 / self.cell_width;
+        let h_2 = 0.5 * h;
+
+        let offset = self.offsets[dir];
+        pos = pos - offset; // Compute position on staggered grid.
+        pos = Grid::clamp_to_range(Vector2::zeros(), self.extent, pos);
+
+        // Compute index.
+        let mut index = Index2::from_iterator((pos * h_inv).iter().map(|v| *v as usize));
+
+        let clamp_index = |i| Grid::clamp_to_range(Index2::zeros(), self.dim, i);
+
+        index = clamp_index(index);
+        let pos_cell = pos - index.cast::<Scalar>() * h;
+        let alpha = pos_cell * h_inv;
+
+        // Get all neighbor indices.
+        // [ (1,0), (1,1)
+        //   (0,0), (1,1) ]
+        let nbs = [
+            clamp_index(index + Index2::new(1, 0)),
+            clamp_index(index + Index2::new(1, 1)),
+            index,
+            clamp_index(index + Index2::new(0, 1)),
+        ];
+
+        // Get all values on the grid.
+        let values = Matrix2::from_iterator(nbs.map(|i| get_val(self.cell(i), dir)).into_iter());
+
+        let f1 = values * Vector2::new(1.0 - alpha.y, alpha.y);
+
+        return Vector2::new(alpha.x, 1.0 - alpha.x).dot(&f1);
+    }
+
     fn enforce_solid_constraints(&mut self, log: &Logger) {
         debug!(log, "Enforce solid constraints on solid cells.");
 

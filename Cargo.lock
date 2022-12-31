@@ -263,6 +263,7 @@ name = "rustofluid"
 version = "0.1.0"
 dependencies = [
  "nalgebra",
+ "num-traits",
  "slog",
  "slog-async",
  "slog-term",
