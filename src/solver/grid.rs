@@ -104,22 +104,21 @@ impl Iterator for GridIndexIterator {
 }
 
 impl Grid {
-    pub fn new(mut dim_x: usize, mut dim_y: usize, cell_width: Scalar) -> Self {
-        dim_x += 2;
-        dim_y += 2;
-        let n = dim_x * dim_y;
+    pub fn new(mut dim: Index2, cell_width: Scalar) -> Self {
+        dim.x += 2;
+        dim.y += 2;
+        let n = dim.x * dim.y;
 
         let h_2 = cell_width as Scalar * 0.5;
-        let dim = Index2::new(dim_x, dim_y);
         let extent = dim.cast::<Scalar>() * cell_width;
 
         let mut grid = Grid {
+            dim,
             cell_width,
-            dim: Index2::new(dim_x, dim_y),
             cells: vec![Cell::new(Index2::new(0, 0)); n],
 
             extent,
-            // `x`-values lie at offest `(0, h/2)` and `y`-values at `(h/2, 0)`.
+            // `x`-values lie at offset `(0, h/2)` and `y`-values at `(h/2, 0)`.
             offsets: [Vector2::new(0.0, h_2), Vector2::new(h_2, 0.0)],
         };
 
@@ -347,13 +346,13 @@ impl Integrate for Grid {
 impl Grid {
     pub fn sample_field<F: Fn(&Cell, usize) -> Scalar>(
         &self,
+        log: &Logger,
         mut pos: Vector2,
         dir: usize,
         get_val: F,
     ) -> Scalar {
         let h = self.cell_width;
         let h_inv = 1.0 / self.cell_width;
-        let h_2 = 0.5 * h;
 
         let offset = self.offsets[dir];
         pos = pos - offset; // Compute position on staggered grid.
@@ -368,22 +367,30 @@ impl Grid {
         let pos_cell = pos - index.cast::<Scalar>() * h;
         let alpha = pos_cell * h_inv;
 
-        // Get all neighbor indices.
-        // [ (1,0), (1,1)
-        //   (0,0), (1,1) ]
+        // Get all neighbor indices. (column major).
+        // [ (0,1), (1,1)
+        //   (0,0), (1,0) ]
         let nbs = [
-            clamp_index(index + Index2::new(1, 0)),
-            clamp_index(index + Index2::new(1, 1)),
-            index,
             clamp_index(index + Index2::new(0, 1)),
+            index,
+            clamp_index(index + Index2::new(1, 1)),
+            clamp_index(index + Index2::new(1, 0)),
         ];
 
         // Get all values on the grid.
-        let values = Matrix2::from_iterator(nbs.map(|i| get_val(self.cell(i), dir)).into_iter());
+        let m = Matrix2::from_iterator(
+            nbs.map(|i| {
+                return get_val(self.cell(i), dir);
+            })
+            .into_iter(), // Column major order.
+        );
 
-        let f1 = values * Vector2::new(1.0 - alpha.y, alpha.y);
+        let t1 = Vector2::new(1.0 - alpha.x, alpha.x);
+        let t2 = Vector2::new(alpha.y, 1.0 - alpha.y);
+        debug!(log, "Sample: {} * {} * {}", t2.transpose(), m, t1);
 
-        return Vector2::new(alpha.x, 1.0 - alpha.x).dot(&f1);
+        return t2.dot(&(m * t1));
+
     }
 
     fn enforce_solid_constraints(&mut self, log: &Logger) {

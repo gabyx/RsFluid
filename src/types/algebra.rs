@@ -20,4 +20,6 @@ macro_rules! idx {
     };
 }
 
+pub use idx as dim;
+
 pub use idx;

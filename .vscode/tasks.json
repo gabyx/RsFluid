@@ -33,7 +33,7 @@
     {
       "problemMatcher": ["$rustc"],
       "command": "cargo",
-      "args": ["run", "rustofluid"],
+      "args": ["run"],
       "group": "build",
       "options": { "env": { "RUST_BACKTRACE": "1" } },
       "label": "Build & Run"

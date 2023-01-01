@@ -12,3 +12,6 @@ slog-term = "2.9.0"
 slog-async = "2.7.0"
 nalgebra = "0.31.4"
 num-traits = "0.2.15"
+float-cmp = "0.9.0"
+clap = { version = "4.0.32", features = ["derive"] }
+plotters = "0.3.4"
