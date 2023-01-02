@@ -1,8 +1,9 @@
-use slog::{info, Logger};
-
 use crate::types::{Scalar, Vector2};
+use slog::{info, Logger};
+use std::any::Any;
 
 pub trait Integrate {
+
     fn integrate(&mut self, _log: &Logger, _dt: Scalar, _gravity: Vector2) {}
     fn solve_incompressibility(
         &mut self,
@@ -12,6 +13,9 @@ pub trait Integrate {
         _density: Scalar,
     ) {
     }
+
+    // For downcasting.
+    fn as_any(&self) -> &dyn Any;
 }
 
 pub struct TimeStepper<'a> {
@@ -20,7 +24,7 @@ pub struct TimeStepper<'a> {
     incompress_iters: u64,
 
     t: Scalar,
-    objects: Vec<Box<dyn Integrate>>,
+    pub objects: Vec<Box<dyn Integrate>>,
 
     log: &'a Logger,
 }

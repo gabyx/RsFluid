@@ -2,6 +2,7 @@ use crate::log::{debug, warn, Logger};
 use crate::solver::timestepper::Integrate;
 use crate::types::*;
 use std::num::Wrapping;
+use std::any::Any;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CellTypes {
@@ -248,9 +249,17 @@ impl Integrate for Cell {
     fn integrate(&mut self, _log: &Logger, dt: Scalar, gravity: Vector2) {
         self.velocity.front = self.velocity.back + dt * gravity;
     }
+
+    fn as_any(&self) -> &dyn Any {
+      self
+    }
 }
 
 impl Integrate for Grid {
+    fn as_any(&self) -> &dyn Any {
+      self
+    }
+
     fn integrate(&mut self, log: &Logger, dt: Scalar, gravity: Vector2) {
         debug!(log, "Integrate grid.");
 

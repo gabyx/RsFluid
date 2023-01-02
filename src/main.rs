@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fmt::Debug;
 use std::fs::create_dir_all;
 use std::str::FromStr;
@@ -7,13 +8,13 @@ use nalgebra as na;
 
 use rustofluid::draw::*;
 use rustofluid::log::*;
-use rustofluid::solver::grid::{Grid,CellGetter};
+use rustofluid::solver::grid::{CellGetter, Grid};
 use rustofluid::solver::timestepper::{Integrate, TimeStepper};
 use rustofluid::types::*;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-struct Args {
+struct CLIArgs {
     #[arg(short = 'o', long, default_value_t = String::from("./frames/frame-{}.png"))]
     output: String,
 
@@ -56,17 +57,17 @@ where
     return Ok(na::SVector::<T, DIM>::from_iterator(it));
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let log = create_logger();
 
-    let cli = Args::parse();
+    let cli = CLIArgs::parse();
 
     std::path::Path::new(&cli.output)
         .parent()
-        .and_then(|p| Some(create_dir_all(p).expect("Could not create dir.")));
+        .and_then(|p| Some(create_dir_all(p).unwrap()));
 
-    let grid = Grid::new(cli.dim, 1.0);
-    let objs: Vec<Box<dyn Integrate>> = vec![Box::new(grid)];
+    let grid = Box::new(Grid::new(cli.dim, 1.0));
+    let objs: Vec<Box<dyn Integrate>> = vec![grid];
 
     let mut timestepper =
         TimeStepper::new(&log, cli.density, cli.gravity, cli.incompress_iter, objs);
@@ -75,16 +76,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t_end = 2.0;
     let n_steps = (t_end / dt) as u64;
 
-    let vel_get = |i, j| {
-        return grid.cell(idx!(i, j)).velocity.back.norm();
-    };
-
-    for _ in 0..n_steps {
+    for step in 0..n_steps {
         timestepper.compute_step(dt);
 
-        let file = std::fmt::format(format_args!(cli.output, n_steps));
-        plot::grid(dim, vel_get, );
+        plot(&log, &timestepper, &cli, step)?;
     }
 
     return Ok(());
+}
+
+fn plot(
+    log: &Logger,
+    timestepper: &TimeStepper,
+    cli_args: &CLIArgs,
+    step: u64,
+) -> Result<(), Box<dyn Error>> {
+    let file = cli_args.output.replace("{}", &format!("{}", step));
+
+    let vel_get = |i, j| {
+        timestepper.objects[0]
+            .as_any()
+            .downcast_ref::<Grid>()
+            .expect("Not a grid")
+            .cell(idx!(i, j))
+            .velocity
+            .back
+            .norm()
+    };
+
+    info!(log, "Saving plots to '{}'.", file);
+    return plot::grid(dim!(800, 600), cli_args.dim, vel_get, file);
 }
