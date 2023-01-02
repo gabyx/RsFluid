@@ -33,7 +33,7 @@ struct CLIArgs {
     #[arg(short = 'g', long = "gravity", default_value = "0.0, 9.81",  value_parser = parse_vector::<Scalar, 2>)]
     gravity: Vector2,
 
-    #[arg(long = "incompress-iters", default_value_t = 10)]
+    #[arg(long = "incompress-iters", default_value_t = 1)]
     incompress_iter: u64,
 }
 

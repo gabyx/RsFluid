@@ -38,5 +38,14 @@
       "options": { "env": { "RUST_BACKTRACE": "1" } },
       "label": "Build & Run"
     }
+
+    {
+      "problemMatcher": ["$rustc"],
+      "command": "cargo",
+      "args": ["run", "--release"],
+      "group": "build",
+      "options": { "env": { "RUST_BACKTRACE": "1" } },
+      "label": "Build & Run Release"
+    }
   ]
 }

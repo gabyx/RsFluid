@@ -10,6 +10,7 @@ pub fn grid<F: Fn(usize, usize) -> Scalar>(
     get_data: F,
     file: String,
 ) -> Result<(), Box<dyn Error>> {
+
     let ratio = dim.y as Scalar / dim.x as Scalar;
     let size_px = dim!(size.x, (size.y as Scalar * ratio) as usize);
 
