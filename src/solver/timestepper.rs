@@ -14,6 +14,13 @@ pub trait Integrate {
     ) {
     }
 
+    fn advect(
+        &mut self,
+        _log: &Logger,
+        _dt: Scalar
+    ) {
+    }
+
     // For downcasting.
     fn as_any(&self) -> &dyn Any;
 }
@@ -52,6 +59,7 @@ impl<'a> TimeStepper<'a> {
 
         self.integrate(dt);
         self.solve_incompressibility(dt);
+        self.advect(dt);
 
         self.t = self.t + dt;
     }
@@ -76,4 +84,13 @@ impl<'a> TimeStepper<'a> {
             obj.solve_incompressibility(self.log, dt, self.incompress_iters, self.density);
         }
     }
+
+    fn advect(&mut self, dt: Scalar) {
+        info!(self.log, "Advect at t: '{:0.3}'.", self.t,);
+
+        for obj in self.objects.iter_mut() {
+            obj.advect(self.log, dt);
+        }
+    }
+
 }

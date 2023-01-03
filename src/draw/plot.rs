@@ -25,9 +25,9 @@ pub fn grid<F: Fn(Index2) -> Option<Scalar>>(
     let cg: colorgrad::Gradient = colorgrad::viridis();
 
     let mut chart = ChartBuilder::on(&root)
-        .margin(40)
-        .x_label_area_size(40)
-        .y_label_area_size(40)
+        .margin(0)
+        .x_label_area_size(0)
+        .y_label_area_size(0)
         .build_cartesian_2d(0.0..(dim.x) as Scalar, 0.0..(dim.y) as Scalar)?;
 
     chart

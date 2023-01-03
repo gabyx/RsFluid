@@ -31,8 +31,8 @@ mod tests {
         let log = create_logger();
         let mut grid = Grid::new(dim!(10, 10), 1.0);
 
-        let sample_back_vel = |cell: &Cell, dir: usize| {
-            let v = cell.velocity.back[dir];
+        let sample_back_vel = |cell: &Cell| {
+            let v = cell.velocity.back[1];
             debug!(log, "Val {}", v);
             return v;
         };

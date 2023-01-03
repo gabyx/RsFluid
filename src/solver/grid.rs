@@ -1,6 +1,7 @@
 use crate::log::{debug, warn, Logger};
 use crate::solver::timestepper::Integrate;
 use crate::types::*;
+use itertools::Itertools;
 use std::any::Any;
 use std::num::Wrapping;
 
@@ -260,6 +261,43 @@ impl Integrate for Grid {
         for cell in self.cells.iter_mut() {
             cell.integrate(log, dt, gravity); // integrate
         }
+
+        // Extrapolate to fluid cells on border.
+        let ranges = [
+            [idx!(0, 1), idx!(0, self.dim.y)],
+            [idx!(self.dim.x - 1, self.dim.x), idx!(0, self.dim.y)],
+            [idx!(0, self.dim.x), idx!(0, 1)],
+            [idx!(0, self.dim.x), idx!(self.dim.y - 1, self.dim.y)],
+        ];
+
+        debug!(log, "Extrapolate border.");
+
+        for range in ranges {
+            let xr = range[0];
+            let yr = range[1];
+
+            for (i, j) in (xr[0]..xr[1]).cartesian_product(yr[0]..yr[1]) {
+                let idx = idx!(i, j);
+
+                if self.cell(idx).mode == CellTypes::Solid {
+                    continue;
+                }
+
+                for dir in 0..2 {
+                    let pos = idx.cast::<Scalar>() * self.cell_width + self.offsets[dir];
+
+                    // Just sample on the inside grid by clamping.
+                    self.cell_mut(idx).velocity.front[dir] = self.sample_field(
+                        log,
+                        idx!(1, 1),
+                        self.dim - idx!(1, 1),
+                        pos,
+                        dir,
+                        |cell: &Cell| cell.velocity.front[dir],
+                    );
+                }
+            }
+        }
     }
 
     fn solve_incompressibility(
@@ -274,16 +312,10 @@ impl Integrate for Grid {
         let cp = density * self.cell_width / dt;
 
         for _iter in 0..iterations {
-            for it in self.iter_index_inside() {
-                let index = it;
+            for idx in self.iter_index_inside() {
+                assert!(self.is_inside_border(idx), "Index {} is not inside", idx);
 
-                assert!(
-                    self.is_inside_border(index),
-                    "Index {} is not inside",
-                    index
-                );
-
-                if self.cell(index).mode == CellTypes::Solid {
+                if self.cell(idx).mode == CellTypes::Solid {
                     continue;
                 }
 
@@ -295,7 +327,7 @@ impl Integrate for Grid {
                     };
                 };
 
-                let nbs = Grid::get_neighbors_indices(index);
+                let nbs = Grid::get_neighbors_indices(idx);
 
                 // Normalization values `s`
                 // for negative/positive neighbors.
@@ -309,7 +341,7 @@ impl Integrate for Grid {
                 }
 
                 if s == 0.0 {
-                    warn!(log, "Fluid in-face count is 0.0 for {:?}", index);
+                    warn!(log, "Fluid in-face count is 0.0 for {:?}", idx);
                     continue;
                 }
 
@@ -318,35 +350,87 @@ impl Integrate for Grid {
                 };
 
                 let mut div: Scalar = 0.0; // Net outflow on this cell.
-                let pos_idx = 1usize;
+                let pos_idx = 1;
                 let nbs_pos = &nbs[pos_idx];
                 for xy in 0..2 {
-                    div += get_vel(nbs_pos[xy], xy) - get_vel(index, xy)
+                    div += get_vel(nbs_pos[xy], xy) - get_vel(idx, xy)
                 }
 
                 // Normalize outflow to the cells we can control.
                 let p = div / s;
-                self.cell_mut(index).pressure -= cp * p;
+                self.cell_mut(idx).pressure -= cp * p;
 
                 // Add outflow-part to inflows to reach net 0-outflow.
-                self.cell_mut(index).velocity.front += r * nbs_s[0] * p;
+                self.cell_mut(idx).velocity.front += r * nbs_s[0] * p;
 
-                // Subtract outflow-part to outflows to reach net 0-outflow.
-                self.cell_mut(nbs[pos_idx][0]).velocity.front.x -= r * nbs_s[pos_idx].x * p;
+                // Subtract outflow-part to outflows to iteratively reach net 0-outflow (div(v) == 0).
+                self.cell_mut(nbs[pos_idx][0]).velocity.front.x -= r * (nbs_s[pos_idx].x) * p;
                 self.cell_mut(nbs[pos_idx][1]).velocity.front.y -= r * nbs_s[pos_idx].y * p;
             }
         }
 
-        for it in self.iter_index() {
-            self.cell_mut(it).velocity.swap();
+        for idx in self.iter_index() {
+            if self.cell(idx).mode == CellTypes::Solid {
+                continue;
+            }
+            self.cell_mut(idx).velocity.swap();
+        }
+    }
+
+    fn advect(&mut self, log: &slog::Logger, dt: Scalar) {
+        for idx in self.iter_index() {
+            if self.cell(idx).mode == CellTypes::Solid {
+                continue;
+            }
+
+            let nbs = Grid::get_neighbors_indices(idx);
+
+            let get_vel = [
+                |cell: &Cell| cell.velocity.back[0],
+                |cell: &Cell| cell.velocity.back[1],
+            ];
+
+            // Advect the two staggered grids (x and then y-direction).
+            for dir in 0..2 {
+                // Is the negative neighbor a solid cell, then do not advect this velocity.
+                match self.cell_opt(nbs[0][dir]) {
+                    Some(cell) => {
+                        if cell.mode == CellTypes::Solid {
+                            continue;
+                        }
+                    }
+                    None => continue,
+                };
+
+                let mut pos = idx.cast::<Scalar>() * self.cell_width + self.offsets[dir];
+                let mut vel = self.cell(idx).velocity.back;
+
+                vel[dir] = self.sample_field(log, idx!(0, 0), self.dim, pos, dir, get_vel[dir]);
+
+                // Get position of particle which reached this position.
+                pos = pos - dt * vel;
+
+                // Set the past velocity at this cell.
+                self.cell_mut(idx).velocity.front[dir] =
+                    self.sample_field(log, idx!(0, 0), self.dim, pos, dir, get_vel[dir]);
+            }
+        }
+
+        for idx in self.iter_index() {
+            if self.cell(idx).mode == CellTypes::Solid {
+                continue;
+            }
+            self.cell_mut(idx).velocity.swap();
         }
     }
 }
 
 impl Grid {
-    pub fn sample_field<F: Fn(&Cell, usize) -> Scalar>(
+    pub fn sample_field<F: Fn(&Cell) -> Scalar>(
         &self,
-        log: &Logger,
+        _log: &Logger,
+        min: Index2,
+        max: Index2,
         mut pos: Vector2,
         dir: usize,
         get_val: F,
@@ -361,7 +445,7 @@ impl Grid {
         // Compute index.
         let mut index = Index2::from_iterator((pos * h_inv).iter().map(|v| *v as usize));
 
-        let clamp_index = |i| Grid::clamp_to_range(Index2::zeros(), self.dim, i);
+        let clamp_index = |i| Grid::clamp_to_range(min, max - idx!(1, 1), i);
 
         index = clamp_index(index);
         let pos_cell = pos - index.cast::<Scalar>() * h;
@@ -380,14 +464,13 @@ impl Grid {
         // Get all values on the grid.
         let m = Matrix2::from_iterator(
             nbs.map(|i| {
-                return get_val(self.cell(i), dir);
+                return get_val(self.cell(i));
             })
             .into_iter(), // Column major order.
         );
 
         let t1 = vec2!(1.0 - alpha.x, alpha.x);
         let t2 = vec2!(alpha.y, 1.0 - alpha.y);
-        debug!(log, "Sample: {} * {} * {}", t2.transpose(), m, t1);
 
         return t2.dot(&(m * t1));
     }

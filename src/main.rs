@@ -28,7 +28,7 @@ struct CLIArgs {
     #[arg(long = "density", default_value_t = 1000.0)]
     density: Scalar,
 
-    #[arg(long = "dim", default_value = "100, 100", value_parser = parse_vector::<usize, 2>)]
+    #[arg(long = "dim", default_value = "500, 100", value_parser = parse_vector::<usize, 2>)]
     dim: Index2,
 
     #[arg(short = 'g', long = "gravity", default_value = "0.0, 9.81",  value_parser = parse_vector::<Scalar, 2>)]
