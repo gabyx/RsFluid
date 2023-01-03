@@ -1,8 +1,8 @@
 use crate::log::{debug, warn, Logger};
 use crate::solver::timestepper::Integrate;
 use crate::types::*;
-use std::num::Wrapping;
 use std::any::Any;
+use std::num::Wrapping;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CellTypes {
@@ -119,20 +119,21 @@ impl Grid {
             cells: vec![Cell::new(Index2::new(0, 0)); n],
 
             extent,
-            // `x`-values lie at offset `(0, h/2)` and `y`-values at `(h/2, 0)`.
+
+            // `x`-values lie at offset `(0, h/2)` and
+            // `y`-values at `(h/2, 0)`.
             offsets: [Vector2::new(0.0, h_2), Vector2::new(h_2, 0.0)],
         };
 
         // Setup grid.
-        for it in grid.to_index_iter() {
-            let mode = if Grid::is_inside_border(grid.dim, it.index) {
+        for it in grid.iter_index() {
+            let mut cell = Cell::new(it.index);
+
+            cell.mode = if grid.is_inside_border(it.index) {
                 CellTypes::Fluid
             } else {
                 CellTypes::Solid
             };
-
-            let mut cell = Cell::new(it.index);
-            cell.mode = mode;
 
             grid.cells[it.to_data_index()] = cell;
         }
@@ -140,7 +141,7 @@ impl Grid {
         return grid;
     }
 
-    fn to_index_iter(&self) -> GridIndexIterator {
+    pub fn iter_index(&self) -> GridIndexIterator {
         return GridIndexIterator {
             curr: GridIndex {
                 index: Index2::new(0, 0),
@@ -151,7 +152,7 @@ impl Grid {
         };
     }
 
-    fn to_inside_index_iter(&self) -> GridIndexIterator {
+    pub fn iter_index_inside(&self) -> GridIndexIterator {
         return GridIndexIterator {
             curr: GridIndex {
                 index: Index2::new(1, 1),
@@ -176,11 +177,11 @@ impl Grid {
         return index < max && index >= min;
     }
 
-    fn is_inside_border(dim: Index2, index: Index2) -> bool {
-        return index > Index2::zeros() && index < (dim - Index2::new(1, 1));
+    pub fn is_inside_border(&self, index: Index2) -> bool {
+        return Grid::is_inside_range(Index2::zeros() + idx!(1, 1), self.dim - idx!(1, 1), index);
     }
 
-    fn get_neighbors_indices(index: Index2) -> [[Index2; 2]; 2] {
+    pub fn get_neighbors_indices(index: Index2) -> [[Index2; 2]; 2] {
         let decrement = |x| (Wrapping(x) - Wrapping(1usize)).0;
 
         return [
@@ -196,6 +197,8 @@ impl Grid {
             ],
         ];
     }
+
+    pub fn set_circular_obstacle(pos: Vector2, radius: f64) {}
 }
 
 pub trait CellGetter<'a, I> {
@@ -247,17 +250,20 @@ impl Grid {
 
 impl Integrate for Cell {
     fn integrate(&mut self, _log: &Logger, dt: Scalar, gravity: Vector2) {
-        self.velocity.front = self.velocity.back + dt * gravity;
+        self.velocity.front = match self.mode {
+            CellTypes::Solid => self.velocity.back,
+            CellTypes::Fluid => self.velocity.back + dt * gravity,
+        };
     }
 
     fn as_any(&self) -> &dyn Any {
-      self
+        self
     }
 }
 
 impl Integrate for Grid {
     fn as_any(&self) -> &dyn Any {
-      self
+        self
     }
 
     fn integrate(&mut self, log: &Logger, dt: Scalar, gravity: Vector2) {
@@ -266,8 +272,6 @@ impl Integrate for Grid {
         for cell in self.cells.iter_mut() {
             cell.integrate(log, dt, gravity); // integrate
         }
-
-        self.enforce_solid_constraints(log);
     }
 
     fn solve_incompressibility(
@@ -282,12 +286,11 @@ impl Integrate for Grid {
         let cp = density * self.cell_width / dt;
 
         for _iter in 0..iterations {
-            for it in self.to_inside_index_iter() {
+            for it in self.iter_index_inside() {
                 let index = it.index;
-                let dim = self.dim;
 
                 assert!(
-                    Grid::is_inside_border(dim, index),
+                    self.is_inside_border(index),
                     "Index {} is not inside",
                     index
                 );
@@ -346,7 +349,7 @@ impl Integrate for Grid {
             }
         }
 
-        for it in self.to_index_iter() {
+        for it in self.iter_index() {
             self.cell_mut(it.index).velocity.swap();
         }
     }
@@ -399,44 +402,5 @@ impl Grid {
         debug!(log, "Sample: {} * {} * {}", t2.transpose(), m, t1);
 
         return t2.dot(&(m * t1));
-
-    }
-
-    fn enforce_solid_constraints(&mut self, log: &Logger) {
-        debug!(log, "Enforce solid constraints on solid cells.");
-
-        // Enforce solid constraint over all cells which are solid.
-        for it in self.to_index_iter() {
-            let index = it.index;
-
-            {
-                let cell = self.cell_mut(index);
-                if cell.mode != CellTypes::Solid {
-                    continue;
-                }
-
-                // Cell is solid, so constrain all involved staggered velocity.
-                // to the last one and also for the neighbors in x and y direction.
-                cell.velocity.front = cell.velocity.back;
-            }
-
-            for idx in 0..2usize {
-                let mut nb_index = index;
-
-                match idx {
-                    0 => nb_index.x += 1, // x neighbor.
-                    1 => nb_index.y += 1, // y neighbor.
-                    _ => {}
-                }
-
-                let cell = self.cell_mut_opt(nb_index);
-                match cell {
-                    Some(c) => {
-                        c.velocity.front[idx] = c.velocity.back[idx]; // reset only the x,y direction.
-                    }
-                    None => {}
-                }
-            }
-        }
     }
 }

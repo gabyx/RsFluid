@@ -2,15 +2,17 @@ use crate::types::*;
 use colorgrad;
 use itertools::Itertools;
 use plotters::prelude::*;
+use plotters::style::Color;
+
 use std::error::Error;
 
-pub fn grid<F: Fn(usize, usize) -> Scalar>(
+pub fn grid<F: Fn(Index2) -> Option<Scalar>>(
     size: Index2,
     dim: Index2,
     get_data: F,
     file: String,
+    color_undef: Option<&dyn Color>,
 ) -> Result<(), Box<dyn Error>> {
-
     let ratio = dim.y as Scalar / dim.x as Scalar;
     let size_px = dim!(size.x, (size.y as Scalar * ratio) as usize);
 
@@ -25,7 +27,7 @@ pub fn grid<F: Fn(usize, usize) -> Scalar>(
         .margin(40)
         .x_label_area_size(40)
         .y_label_area_size(40)
-        .build_cartesian_2d(0.0..dim.x as Scalar, 0.0..dim.y as Scalar)?;
+        .build_cartesian_2d(0.0..(dim.x) as Scalar, 0.0..(dim.y) as Scalar)?;
 
     chart
         .configure_mesh()
@@ -36,17 +38,26 @@ pub fn grid<F: Fn(usize, usize) -> Scalar>(
 
     let plotting_area = chart.plotting_area();
 
+    let mut some_color: RGBColor;
+    let none_color = color_undef.unwrap_or(&RED);
+    let mut color: &dyn Color;
+
     for (i, j) in (0..dim.x).cartesian_product(0..dim.y) {
-        let value = get_data(i, j);
+        match get_data(idx!(i, j)) {
+            Some(v) => {
+                let c = cg.at(v.clamp(0.0, 1.0)).to_rgba8();
+                some_color = RGBColor(c[0], c[1], c[2]);
+                color = &some_color;
+            }
+            None => color = none_color,
+        };
 
         let x = i as Scalar;
         let y = j as Scalar;
 
-        let color = cg.at(value.clamp(0.0, 1.0)).to_rgba8();
-
         plotting_area.draw(&Rectangle::new(
             [(x, y), (x + 1.0, y + 1.0)],
-            ShapeStyle::from(&RGBColor(color[0], color[1], color[2])).filled(),
+            ShapeStyle::from(color.to_rgba()).filled(),
         ))?;
     }
 

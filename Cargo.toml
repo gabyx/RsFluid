@@ -17,3 +17,4 @@ clap = { version = "4.0.32", features = ["derive"] }
 plotters = "0.3.4"
 colorgrad = "0.6.2"
 itertools = "0.10.5"
+simple-error = "0.1.9"

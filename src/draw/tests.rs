@@ -6,17 +6,16 @@ mod tests {
 
     #[test]
     fn test_grid() -> Result<(), Box<dyn std::error::Error>> {
-        let get_data = |i, j| {
-            return ((i as Scalar)/15.0).sin() * ((j as Scalar)/10.0).cos();
+        let get_data = |index: Index2| {
+            if index.x == 300 - 1 {
+                return None;
+            }
+
+            return Some(((index.x as Scalar) / 15.0).sin() * ((index.y as Scalar) / 10.0).cos());
         };
 
         let file = "test.png";
-        grid(
-            dim!(800, 600),
-            dim!(800, 600),
-            get_data,
-            file.to_string(),
-        )?;
+        grid(dim!(300, 300), dim!(300, 300), get_data, file.to_string(), None)?;
 
         Ok(())
     }

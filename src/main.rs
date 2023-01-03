@@ -8,6 +8,7 @@ use nalgebra as na;
 
 use rustofluid::draw::*;
 use rustofluid::log::*;
+use rustofluid::solver::grid::CellTypes;
 use rustofluid::solver::grid::{CellGetter, Grid};
 use rustofluid::solver::timestepper::{Integrate, TimeStepper};
 use rustofluid::types::*;
@@ -18,13 +19,13 @@ struct CLIArgs {
     #[arg(short = 'o', long, default_value_t = String::from("./frames/frame-{}.png"))]
     output: String,
 
-    #[arg(short = 'e', long = "time-end", default_value_t = 10.0)]
+    #[arg(short = 'e', long = "time-end", default_value_t = 0.4)]
     time_end: Scalar,
 
-    #[arg(short = 't', long = "timestep", default_value_t = 0.001)]
+    #[arg(short = 't', long = "timestep", default_value_t = 0.1)]
     timestep: Scalar,
 
-    #[arg(long = "density", default_value_t = 1.0)]
+    #[arg(long = "density", default_value_t = 1000.0)]
     density: Scalar,
 
     #[arg(long = "dim", default_value = "100, 100", value_parser = parse_vector::<usize, 2>)]
@@ -33,8 +34,14 @@ struct CLIArgs {
     #[arg(short = 'g', long = "gravity", default_value = "0.0, 9.81",  value_parser = parse_vector::<Scalar, 2>)]
     gravity: Vector2,
 
-    #[arg(long = "incompress-iters", default_value_t = 1)]
+    #[arg(long = "incompress-iters", default_value_t = 40)]
     incompress_iter: u64,
+
+    #[arg(long = "scene-index", default_value_t = 0)]
+    scene_idx: usize,
+
+    #[arg(long = "video", default_value_t = true)]
+    render_video: bool,
 }
 
 fn parse_vector<T, const DIM: usize>(s: &str) -> Result<na::SVector<T, DIM>, String>
@@ -57,24 +64,50 @@ where
     return Ok(na::SVector::<T, DIM>::from_iterator(it));
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn setup_scene(grid: &mut Grid, scene_idx: usize) -> SimpleResult<()> {
+    if scene_idx == 0 {
+        for it in grid.iter_index() {
+            let idx = it.index;
+
+            // Set walls.
+            if idx.x == 0 || (idx.y == 0 || idx.y == grid.dim.y - 1) {
+                grid.cell_mut(idx).mode = CellTypes::Solid;
+            }
+
+            if grid.is_inside_border(idx) && idx.x == 1 {
+                grid.cell_mut(idx).velocity.back = Vector2::new(0.0, 5.0);
+            }
+        }
+    } else {
+        bail!("Not implemented scene index '{}'.", scene_idx);
+    }
+
+    return Ok(());
+}
+
+fn assert_output_path(output: &str) {
+    std::path::Path::new(&output)
+        .parent()
+        .and_then(|p| Some(create_dir_all(p).unwrap()));
+}
+
+fn main() -> GenericResult<()> {
     let log = create_logger();
 
     let cli = CLIArgs::parse();
 
-    std::path::Path::new(&cli.output)
-        .parent()
-        .and_then(|p| Some(create_dir_all(p).unwrap()));
+    assert_output_path(&cli.output);
 
-    let grid = Box::new(Grid::new(cli.dim, 1.0));
+    let mut grid = Box::new(Grid::new(cli.dim, 1.0));
+    setup_scene(&mut grid, cli.scene_idx)?;
+
     let objs: Vec<Box<dyn Integrate>> = vec![grid];
 
     let mut timestepper =
         TimeStepper::new(&log, cli.density, cli.gravity, cli.incompress_iter, objs);
 
     let dt = cli.timestep;
-    let t_end = 2.0;
-    let n_steps = (t_end / dt) as u64;
+    let n_steps = (cli.time_end / dt) as u64;
 
     for step in 0..n_steps {
         timestepper.compute_step(dt);
@@ -93,17 +126,19 @@ fn plot(
 ) -> Result<(), Box<dyn Error>> {
     let file = cli_args.output.replace("{}", &format!("{}", step));
 
-    let vel_get = |i, j| {
-        timestepper.objects[0]
-            .as_any()
-            .downcast_ref::<Grid>()
-            .expect("Not a grid")
-            .cell(idx!(i, j))
-            .velocity
-            .back
-            .norm()
+    let grid = timestepper.objects[0]
+        .as_any()
+        .downcast_ref::<Grid>()
+        .expect("Not a grid");
+
+    let norm_val = 6.0;
+    let vel_get = |idx: Index2| {
+        if !grid.is_inside_border(idx) {
+            return None;
+        }
+        return Some(grid.cell(idx).velocity.back.norm() / norm_val);
     };
 
     info!(log, "Saving plots to '{}'.", file);
-    return plot::grid(dim!(800, 600), cli_args.dim, vel_get, file);
+    return plot::grid(dim!(800, 600), cli_args.dim, vel_get, file, None);
 }
