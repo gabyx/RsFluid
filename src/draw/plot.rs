@@ -14,7 +14,8 @@ pub fn grid<F: Fn(Index2) -> Option<Scalar>>(
     color_undef: Option<&dyn Color>,
 ) -> Result<(), Box<dyn Error>> {
     let ratio = dim.y as Scalar / dim.x as Scalar;
-    let size_px = dim!(size.x, (size.y as Scalar * ratio) as usize);
+
+    let size_px = dim!(size.x, (size.x as Scalar * ratio) as usize);
 
     let root = BitMapBackend::new(&file, (size_px.x as u32, size_px.y as u32)).into_drawing_area();
 

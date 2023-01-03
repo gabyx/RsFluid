@@ -14,6 +14,15 @@ pub type Matrix2x1T<T> = nalgebra::Matrix2x1<T>;
 pub type Index2 = nalgebra::Vector2<usize>;
 
 #[macro_export]
+macro_rules! vec2 {
+    ($x:expr, $($y:expr),+ ) => {
+        Vector2::new($x, $($y),+)
+    };
+}
+
+pub use vec2;
+
+#[macro_export]
 macro_rules! idx {
     ($x:expr, $($y:expr),+ ) => {
         Index2::new($x, $($y),+)
@@ -21,5 +30,4 @@ macro_rules! idx {
 }
 
 pub use idx as dim;
-
 pub use idx;

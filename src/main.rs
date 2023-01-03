@@ -64,25 +64,44 @@ where
     return Ok(na::SVector::<T, DIM>::from_iterator(it));
 }
 
-fn setup_scene(grid: &mut Grid, scene_idx: usize) -> SimpleResult<()> {
-    if scene_idx == 0 {
-        for it in grid.iter_index() {
-            let idx = it.index;
+fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<TimeStepper<'t>>> {
+    let mut grid = Box::new(Grid::new(cli.dim, 1.0));
 
+    if cli.scene_idx == 0 {
+        for idx in grid.iter_index() {
             // Set walls.
-            if idx.x == 0 || (idx.y == 0 || idx.y == grid.dim.y - 1) {
+            if idx.x == 0 || idx.y == 0 || idx.y == grid.dim.y - 1 {
                 grid.cell_mut(idx).mode = CellTypes::Solid;
             }
 
             if grid.is_inside_border(idx) && idx.x == 1 {
-                grid.cell_mut(idx).velocity.back = Vector2::new(0.0, 5.0);
+                grid.cell_mut(idx).velocity.back = vec2!(5.0, 0.0);
             }
         }
     } else {
-        bail!("Not implemented scene index '{}'.", scene_idx);
+        bail!("Not implemented scene index '{}'.", cli.scene_idx);
     }
 
-    return Ok(());
+    let grav = if cli.scene_idx == 0 {
+        Vector2::zeros()
+    } else {
+        cli.gravity
+    };
+
+
+    grid.set_obstacle((grid.dim / 2).cast::<Scalar>(), 10.0);
+
+    let objs: Vec<Box<dyn Integrate>> = vec![grid];
+
+    let timestepper = Box::new(TimeStepper::new(
+        &log,
+        cli.density,
+        grav,
+        cli.incompress_iter,
+        objs,
+    ));
+
+    return Ok(timestepper);
 }
 
 fn assert_output_path(output: &str) {
@@ -93,18 +112,11 @@ fn assert_output_path(output: &str) {
 
 fn main() -> GenericResult<()> {
     let log = create_logger();
-
     let cli = CLIArgs::parse();
 
     assert_output_path(&cli.output);
 
-    let mut grid = Box::new(Grid::new(cli.dim, 1.0));
-    setup_scene(&mut grid, cli.scene_idx)?;
-
-    let objs: Vec<Box<dyn Integrate>> = vec![grid];
-
-    let mut timestepper =
-        TimeStepper::new(&log, cli.density, cli.gravity, cli.incompress_iter, objs);
+    let mut timestepper = setup_scene(&log, &cli)?;
 
     let dt = cli.timestep;
     let n_steps = (cli.time_end / dt) as u64;
@@ -133,12 +145,12 @@ fn plot(
 
     let norm_val = 6.0;
     let vel_get = |idx: Index2| {
-        if !grid.is_inside_border(idx) {
+        if grid.cell(idx).mode == CellTypes::Solid {
             return None;
         }
         return Some(grid.cell(idx).velocity.back.norm() / norm_val);
     };
 
     info!(log, "Saving plots to '{}'.", file);
-    return plot::grid(dim!(800, 600), cli_args.dim, vel_get, file, None);
+    return plot::grid(dim!(800, 600), grid.dim, vel_get, file, None);
 }

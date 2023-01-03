@@ -7,7 +7,7 @@ mod tests {
     #[test]
     fn test_grid() -> Result<(), Box<dyn std::error::Error>> {
         let get_data = |index: Index2| {
-            if index.x == 300 - 1 {
+            if index.y == 300 - 1 {
                 return None;
             }
 
@@ -15,7 +15,7 @@ mod tests {
         };
 
         let file = "test.png";
-        grid(dim!(300, 300), dim!(300, 300), get_data, file.to_string(), None)?;
+        grid(dim!(500, 500), dim!(300, 300), get_data, file.to_string(), None)?;
 
         Ok(())
     }

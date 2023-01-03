@@ -63,11 +63,7 @@ pub struct Grid {
     offsets: [Vector2; 2],
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct GridIndex {
-    pub index: Index2,
-    dim: Index2,
-}
+type GridIndex = Index2;
 
 pub struct GridIndexIterator {
     curr: GridIndex,
@@ -76,9 +72,13 @@ pub struct GridIndexIterator {
     max: Index2,
 }
 
-impl GridIndex {
-    fn to_data_index(&self) -> usize {
-        return self.index.x + self.dim.x * self.index.y;
+impl GridIndexIterator {
+    pub fn new(dim: Index2) -> GridIndexIterator {
+        return GridIndexIterator {
+            curr: idx!(0, 0),
+            min: idx!(0, 0),
+            max: dim,
+        };
     }
 }
 
@@ -90,13 +90,13 @@ impl Iterator for GridIndexIterator {
 
         // Advance to next cell.
         let next = &mut self.curr;
-        next.index.x += 1;
-        if next.index.x >= self.max.x {
-            next.index.y += 1;
-            next.index.x = self.min.x;
+        next.x += 1;
+        if next.x >= self.max.x {
+            next.y += 1;
+            next.x = self.min.x;
         }
 
-        if Grid::is_inside_range(self.min, self.max, curr.index) {
+        if Grid::is_inside_range(self.min, self.max, curr) {
             return Some(curr);
         }
 
@@ -108,58 +108,35 @@ impl Grid {
     pub fn new(mut dim: Index2, cell_width: Scalar) -> Self {
         dim.x += 2;
         dim.y += 2;
-        let n = dim.x * dim.y;
 
         let h_2 = cell_width as Scalar * 0.5;
         let extent = dim.cast::<Scalar>() * cell_width;
 
-        let mut grid = Grid {
+        return Grid {
             dim,
             cell_width,
-            cells: vec![Cell::new(Index2::new(0, 0)); n],
+
+            cells: GridIndexIterator::new(dim)
+                .map(|it| Cell::new(it))
+                .collect(),
 
             extent,
 
             // `x`-values lie at offset `(0, h/2)` and
             // `y`-values at `(h/2, 0)`.
-            offsets: [Vector2::new(0.0, h_2), Vector2::new(h_2, 0.0)],
+            offsets: [vec2!(0.0, h_2), vec2!(h_2, 0.0)],
         };
-
-        // Setup grid.
-        for it in grid.iter_index() {
-            let mut cell = Cell::new(it.index);
-
-            cell.mode = if grid.is_inside_border(it.index) {
-                CellTypes::Fluid
-            } else {
-                CellTypes::Solid
-            };
-
-            grid.cells[it.to_data_index()] = cell;
-        }
-
-        return grid;
     }
 
     pub fn iter_index(&self) -> GridIndexIterator {
-        return GridIndexIterator {
-            curr: GridIndex {
-                index: Index2::new(0, 0),
-                dim: self.dim,
-            },
-            min: Index2::new(0, 0),
-            max: self.dim,
-        };
+        return GridIndexIterator::new(self.dim);
     }
 
     pub fn iter_index_inside(&self) -> GridIndexIterator {
         return GridIndexIterator {
-            curr: GridIndex {
-                index: Index2::new(1, 1),
-                dim: self.dim,
-            },
-            min: Index2::new(1, 1),
-            max: self.dim - Index2::new(1, 1),
+            curr: idx!(1, 1),
+            min: idx!(1, 1),
+            max: self.dim - idx!(1, 1),
         };
     }
 
@@ -198,7 +175,18 @@ impl Grid {
         ];
     }
 
-    pub fn set_circular_obstacle(pos: Vector2, radius: f64) {}
+    pub fn set_obstacle(&mut self, pos: Vector2, radius: f64) {
+        for idx in self.iter_index_inside() {
+            let c = idx.cast::<Scalar>() * self.cell_width
+                + vec2!(self.cell_width * 0.5, self.cell_width * 0.5);
+
+            if (c - pos).norm_squared() <= radius * radius {
+                self.cell_mut(idx).mode = CellTypes::Solid;
+            } else {
+                self.cell_mut(idx).mode = CellTypes::Fluid;
+            }
+        }
+    }
 }
 
 pub trait CellGetter<'a, I> {
@@ -287,7 +275,7 @@ impl Integrate for Grid {
 
         for _iter in 0..iterations {
             for it in self.iter_index_inside() {
-                let index = it.index;
+                let index = it;
 
                 assert!(
                     self.is_inside_border(index),
@@ -316,7 +304,7 @@ impl Integrate for Grid {
                 let mut s = 0.0;
 
                 for dir in 0..2 {
-                    nbs_s[dir] = Vector2::new(s_factor(nbs[dir][0]), s_factor(nbs[dir][1]));
+                    nbs_s[dir] = vec2!(s_factor(nbs[dir][0]), s_factor(nbs[dir][1]));
                     s += nbs_s[dir].sum();
                 }
 
@@ -350,7 +338,7 @@ impl Integrate for Grid {
         }
 
         for it in self.iter_index() {
-            self.cell_mut(it.index).velocity.swap();
+            self.cell_mut(it).velocity.swap();
         }
     }
 }
@@ -397,8 +385,8 @@ impl Grid {
             .into_iter(), // Column major order.
         );
 
-        let t1 = Vector2::new(1.0 - alpha.x, alpha.x);
-        let t2 = Vector2::new(alpha.y, 1.0 - alpha.y);
+        let t1 = vec2!(1.0 - alpha.x, alpha.x);
+        let t2 = vec2!(alpha.y, 1.0 - alpha.y);
         debug!(log, "Sample: {} * {} * {}", t2.transpose(), m, t1);
 
         return t2.dot(&(m * t1));
