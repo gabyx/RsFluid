@@ -140,7 +140,6 @@ fn plot(
     cli_args: &CLIArgs,
     step: u64,
 ) -> Result<(), Box<dyn Error>> {
-
     let grid = timestepper.objects[0]
         .as_any()
         .downcast_ref::<Grid>()
@@ -148,16 +147,16 @@ fn plot(
 
     let p_range = grid.stats[1].pressure - grid.stats[0].pressure;
     let press_get = |idx: Index2| {
-        // if grid.cell(idx).mode == CellTypes::Solid {
-        //     return None;
-        // }
+        if grid.cell(idx).mode == CellTypes::Solid {
+            return None;
+        }
         return Some((grid.cell(idx).pressure - grid.stats[0].pressure) / p_range);
     };
 
     let vel_get = |idx: Index2| {
-        // if grid.cell(idx).mode == CellTypes::Solid {
-        //     return None;
-        // }
+        if grid.cell(idx).mode == CellTypes::Solid {
+            return None;
+        }
         return Some(grid.cell(idx).velocity.back.norm() / 5.0);
     };
 
