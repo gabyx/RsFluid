@@ -75,7 +75,7 @@ fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<TimeSt
             }
 
             if grid.is_inside_border(idx) && idx.x == 1 {
-                grid.cell_mut(idx).velocity.back = vec2!(15.0, 0.0);
+                grid.cell_mut(idx).velocity.back = vec2!(10.0, 0.0);
             }
         }
     } else {

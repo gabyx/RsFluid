@@ -2,6 +2,7 @@ use crate::log::{debug, info, warn, Logger};
 use crate::solver::timestepper::Integrate;
 use crate::types::*;
 use itertools::Itertools;
+use rayon::prelude::*;
 use std::any::Any;
 use std::num::Wrapping;
 
@@ -25,6 +26,15 @@ pub struct Cell {
     pub mode: CellTypes,
 
     index: Index2,
+}
+
+#[derive(Clone, Debug)]
+pub struct Stats {
+    pub velocity: Vector2,
+    pub velocity_norm: Scalar,
+    pub pressure: Scalar,
+    pub smoke: Scalar,
+    pub div: Scalar,
 }
 
 impl Cell {
@@ -54,11 +64,63 @@ impl Cell {
     }
 }
 
+impl Stats {
+    fn identity<const I: usize>() -> Stats {
+        let init = if I == 0 { std::f64::MAX } else { std::f64::MIN };
+        let init_vec2 = Vector2::from_element(init);
+
+        return Stats {
+            velocity: init_vec2,
+            velocity_norm: init,
+            pressure: init,
+            smoke: init,
+            div: init,
+        };
+    }
+
+    pub fn from(cell: &Cell) -> Stats {
+        return Stats {
+            velocity: cell.velocity.back,
+            velocity_norm: cell.velocity.back.norm(),
+            pressure: cell.pressure,
+            smoke: cell.smoke.back,
+            div: cell.div,
+        };
+    }
+
+    fn accumulate<const I: usize>(&self, stats: &Stats) -> Stats {
+        const MIN_MAX: [fn(f64, f64) -> f64; 2] = [Scalar::min, Scalar::max];
+        const MIN_MAX_V2: [fn(&Vector2, &Vector2) -> Vector2; 2] = [Vector2::inf, Vector2::sup];
+
+        return Stats {
+            velocity: MIN_MAX_V2[I](&self.velocity, &stats.velocity),
+            velocity_norm: MIN_MAX[I](self.velocity_norm, stats.velocity_norm),
+            pressure: MIN_MAX[I](self.pressure, stats.pressure),
+            smoke: MIN_MAX[I](self.smoke, stats.smoke),
+            div: MIN_MAX[I](self.div, stats.div),
+        };
+    }
+
+    pub fn min_identity() -> Stats {
+        return Self::identity::<0>();
+    }
+    pub fn max_identity() -> Stats {
+        return Self::identity::<1>();
+    }
+
+    pub fn min(&self, stats: &Stats) -> Stats {
+        return self.accumulate::<0>(&stats);
+    }
+    pub fn max(&self, stats: &Stats) -> Stats {
+        return self.accumulate::<1>(&stats);
+    }
+}
+
 pub struct Grid {
     pub cell_width: Scalar,
     pub dim: Index2,
 
-    pub stats: [Cell; 2], // Min. max range.
+    pub stats: [Stats; 2], //Min and max. accumulator statistics.
 
     cells: Vec<Cell>,
 
@@ -125,7 +187,7 @@ impl Grid {
                 .map(|it| Cell::new(it))
                 .collect(),
 
-            stats: [Cell::new(idx!(0, 0)), Cell::new(idx!(0, 0))],
+            stats: [Stats::min_identity(), Stats::max_identity()],
 
             extent,
             // `x`-values lie at offset `(0, h/2)` and
@@ -192,6 +254,30 @@ impl Grid {
                 self.cell_mut(idx).mode = CellTypes::Fluid;
             }
         }
+    }
+
+    fn compute_stats(&mut self, log: &Logger) {
+        // Parallelized accumulation of statistics.
+        self.stats[0] = self
+            .cells
+            .par_iter()
+            .map(|c| Stats::from(c))
+            .reduce(|| Stats::identity::<0>(), |a, b| Stats::min(&a, &b));
+
+        self.stats[1] = self
+            .cells
+            .par_iter()
+            .map(|c| Stats::from(c))
+            .reduce(|| Stats::identity::<1>(), |a, b| Stats::max(&a, &b));
+
+        info!(
+            log,
+            "Divergence range: {:.4?}, {:.4?}", self.stats[0].div, self.stats[1].div
+        );
+        info!(
+            log,
+            "Pressure range: {:.4?}, {:.4?}", self.stats[0].pressure, self.stats[1].pressure
+        );
     }
 }
 
@@ -262,20 +348,7 @@ impl Integrate for Grid {
 
     fn reset(&mut self, log: &Logger) {
         info!(log, "Reset stats.");
-
-        let init = [std::f64::MAX, std::f64::MIN]; // Init values for min. and max.
-        self.stats = [Cell::new(idx!(0, 0)), Cell::new(idx!(0, 0))];
-
-        for i in 0..2 {
-            self.stats[i].pressure = init[i];
-            self.stats[i].div = init[i];
-
-            self.stats[i].smoke.back = init[i];
-            self.stats[i].smoke.front = init[i];
-
-            self.stats[i].velocity.back.fill(init[i]);
-            self.stats[i].velocity.front.fill(init[i]);
-        }
+        self.stats = [Stats::min_identity(), Stats::max_identity()];
     }
 
     fn integrate(&mut self, log: &Logger, dt: Scalar, gravity: Vector2) {
@@ -398,30 +471,13 @@ impl Integrate for Grid {
             }
         }
 
-        for idx in self.iter_index() {
-            let div = self.cell(idx).div;
-            self.stats[0].div = Scalar::min(self.stats[0].div, div);
-            self.stats[1].div = Scalar::max(self.stats[1].div, div);
+        self.compute_stats(&log);
 
-            let p = self.cell(idx).pressure;
-            self.stats[0].pressure = Scalar::min(self.stats[0].pressure, p);
-            self.stats[1].pressure = Scalar::max(self.stats[1].pressure, p);
-        }
-
-        info!(
-            log,
-            "Divergence range: {:.4?}, {:.4?}", self.stats[0].div, self.stats[1].div
-        );
-        info!(
-            log,
-            "Pressure range: {:.4?}, {:.4?}", self.stats[0].pressure, self.stats[1].pressure
-        );
     }
 
     fn advect(&mut self, log: &slog::Logger, dt: Scalar) {
-
         for idx in self.iter_index() {
-          self.cell_mut(idx).velocity.front = self.cell(idx).velocity.back;
+            self.cell_mut(idx).velocity.front = self.cell(idx).velocity.back;
         }
 
         for idx in self.iter_index_inside() {
@@ -467,7 +523,6 @@ impl Integrate for Grid {
         for idx in self.iter_index() {
             self.cell_mut(idx).velocity.swap();
         }
-
     }
 }
 

@@ -303,11 +303,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         this.integrate(dt, gravity);
 
         this.p.fill(0.0);
-        //this.solveIncompressibility(numIters, dt);
+        this.solveIncompressibility(numIters, dt);
 
-        // this.extrapolate();
+        this.extrapolate();
         this.advectVel(dt);
-        // this.advectSmoke(dt);
+        this.advectSmoke(dt);
       }
     }
 
