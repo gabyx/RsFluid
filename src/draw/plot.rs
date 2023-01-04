@@ -40,7 +40,7 @@ pub fn grid<F: Fn(Index2) -> Option<Scalar>>(
     let plotting_area = chart.plotting_area();
 
     let mut some_color: RGBColor;
-    let none_color = color_undef.unwrap_or(&RED);
+    let none_color = color_undef.unwrap_or(&BLACK);
     let mut color: &dyn Color;
 
     for (i, j) in (0..dim.x).cartesian_product(0..dim.y) {
