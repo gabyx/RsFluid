@@ -33,7 +33,7 @@
     {
       "problemMatcher": ["$rustc"],
       "command": "cargo",
-      "args": ["run"],
+      "args": ["run","--bin", "rustofluid", "--", "-e", "0.05", "--timestep", "0.016"],
       "group": "build",
       "options": { "env": { "RUST_BACKTRACE": "1" } },
       "label": "Build & Run"
@@ -42,7 +42,7 @@
     {
       "problemMatcher": ["$rustc"],
       "command": "cargo",
-      "args": ["run", "--release", "--bin", "rustofluid", "--", "-e", "2.0", "--timestep", "0.001"],
+      "args": ["run", "--release", "--bin", "rustofluid", "--", "-e", "2.0", "--timestep", "0.016"],
       "group": "build",
       "options": { "env": { "RUST_BACKTRACE": "1" } },
       "label": "Build & Run Release"

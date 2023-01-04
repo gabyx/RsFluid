@@ -12,20 +12,20 @@ pub fn grid<F: Fn(Index2) -> Option<Scalar>>(
     get_data: F,
     file: String,
     color_undef: Option<&dyn Color>,
+    text: &str,
 ) -> Result<(), Box<dyn Error>> {
     let ratio = dim.y as Scalar / dim.x as Scalar;
 
-    let size_px = dim!(size.x, (size.x as Scalar * ratio) as usize);
+    let size_px = dim!(size.x, (size.x as Scalar * ratio) as usize + 20);
 
     let root = BitMapBackend::new(&file, (size_px.x as u32, size_px.y as u32)).into_drawing_area();
-
     root.fill(&WHITE)?;
-    root.titled("Velocity", ("sans-serif", 12))?;
+    root.titled(&text, ("sans-serif", 12))?;
 
-    let cg: colorgrad::Gradient = colorgrad::viridis();
+    let cg: colorgrad::Gradient = colorgrad::turbo();
 
     let mut chart = ChartBuilder::on(&root)
-        .margin(0)
+        .margin_top(20)
         .x_label_area_size(0)
         .y_label_area_size(0)
         .build_cartesian_2d(0.0..(dim.x) as Scalar, 0.0..(dim.y) as Scalar)?;

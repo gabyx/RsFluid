@@ -4,8 +4,12 @@ pub struct FrontBackBuffer<T> {
     pub back: T,  // Front buffer.
 }
 
-impl<T> FrontBackBuffer<T> {
+impl<T> FrontBackBuffer<T>  where T: Copy{
     pub fn swap(&mut self) {
-        std::mem::swap(&mut self.front, &mut self.back);
+        //std::mem::swap(&mut self.front, &mut self.back);
+
+        let temp = self.back;
+        self.back = self.front;
+        self.front = temp;
     }
 }

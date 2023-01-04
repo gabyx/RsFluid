@@ -1,4 +1,4 @@
-use crate::log::{debug, warn, Logger};
+use crate::log::{debug, info, warn, Logger};
 use crate::solver::timestepper::Integrate;
 use crate::types::*;
 use itertools::Itertools;
@@ -20,6 +20,7 @@ pub struct Cell {
 
     pub pressure: Scalar,
     pub smoke: FrontBackBuffer<Scalar>,
+    pub div: Scalar,
 
     pub mode: CellTypes,
 
@@ -37,6 +38,7 @@ impl Cell {
                 front: default_vel,
                 back: default_vel,
             },
+            div: 0.0,
             pressure: default_pressure,
             smoke: FrontBackBuffer {
                 front: default_smoke,
@@ -55,6 +57,8 @@ impl Cell {
 pub struct Grid {
     pub cell_width: Scalar,
     pub dim: Index2,
+
+    pub stats: [Cell; 2], // Min. max range.
 
     cells: Vec<Cell>,
 
@@ -121,8 +125,9 @@ impl Grid {
                 .map(|it| Cell::new(it))
                 .collect(),
 
-            extent,
+            stats: [Cell::new(idx!(0, 0)), Cell::new(idx!(0, 0))],
 
+            extent,
             // `x`-values lie at offset `(0, h/2)` and
             // `y`-values at `(h/2, 0)`.
             offsets: [vec2!(0.0, h_2), vec2!(h_2, 0.0)],
@@ -239,7 +244,7 @@ impl Grid {
 
 impl Integrate for Cell {
     fn integrate(&mut self, _log: &Logger, dt: Scalar, gravity: Vector2) {
-        self.velocity.front = match self.mode {
+        self.velocity.back = match self.mode {
             CellTypes::Solid => self.velocity.back,
             CellTypes::Fluid => self.velocity.back + dt * gravity,
         };
@@ -253,6 +258,24 @@ impl Integrate for Cell {
 impl Integrate for Grid {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn reset(&mut self, log: &Logger) {
+        info!(log, "Reset stats.");
+
+        let init = [std::f64::MAX, std::f64::MIN]; // Init values for min. and max.
+        self.stats = [Cell::new(idx!(0, 0)), Cell::new(idx!(0, 0))];
+
+        for i in 0..2 {
+            self.stats[i].pressure = init[i];
+            self.stats[i].div = init[i];
+
+            self.stats[i].smoke.back = init[i];
+            self.stats[i].smoke.front = init[i];
+
+            self.stats[i].velocity.back.fill(init[i]);
+            self.stats[i].velocity.front.fill(init[i]);
+        }
     }
 
     fn integrate(&mut self, log: &Logger, dt: Scalar, gravity: Vector2) {
@@ -287,13 +310,13 @@ impl Integrate for Grid {
                     let pos = idx.cast::<Scalar>() * self.cell_width + self.offsets[dir];
 
                     // Just sample on the inside grid by clamping.
-                    self.cell_mut(idx).velocity.front[dir] = self.sample_field(
+                    self.cell_mut(idx).velocity.back[dir] = self.sample_field(
                         log,
                         idx!(1, 1),
                         self.dim - idx!(1, 1),
                         pos,
                         dir,
-                        |cell: &Cell| cell.velocity.front[dir],
+                        |cell: &Cell| cell.velocity.back[dir],
                     );
                 }
             }
@@ -307,14 +330,16 @@ impl Integrate for Grid {
         iterations: u64,
         density: Scalar,
     ) {
-        let r = 1.9; // Overrelaxation factor.
+        // Set pressure field to zero.
+        for idx in self.iter_index() {
+            self.cell_mut(idx).pressure = 0.0;
+        }
 
+        let r = 1.9; // Overrelaxation factor.
         let cp = density * self.cell_width / dt;
 
         for _iter in 0..iterations {
             for idx in self.iter_index_inside() {
-                assert!(self.is_inside_border(idx), "Index {} is not inside", idx);
-
                 if self.cell(idx).mode == CellTypes::Solid {
                     continue;
                 }
@@ -335,9 +360,9 @@ impl Integrate for Grid {
                 let mut nbs_s = [Vector2::zeros(), Vector2::zeros()];
                 let mut s = 0.0;
 
-                for dir in 0..2 {
-                    nbs_s[dir] = vec2!(s_factor(nbs[dir][0]), s_factor(nbs[dir][1]));
-                    s += nbs_s[dir].sum();
+                for neg_pos in 0..2 {
+                    nbs_s[neg_pos] = vec2!(s_factor(nbs[neg_pos][0]), s_factor(nbs[neg_pos][1]));
+                    s += nbs_s[neg_pos].sum();
                 }
 
                 if s == 0.0 {
@@ -346,89 +371,110 @@ impl Integrate for Grid {
                 }
 
                 let get_vel = |index: Index2, dir: usize| {
-                    return self.cell(index).velocity.front[dir];
+                    return self.cell(index).velocity.back[dir];
                 };
 
                 let mut div: Scalar = 0.0; // Net outflow on this cell.
                 let pos_idx = 1;
                 let nbs_pos = &nbs[pos_idx];
-                for xy in 0..2 {
-                    div += get_vel(nbs_pos[xy], xy) - get_vel(idx, xy)
+                for dir in 0..2 {
+                    div += get_vel(nbs_pos[dir], dir) - get_vel(idx, dir)
                 }
 
+                self.cell_mut(idx).div = div;
+
                 // Normalize outflow to the cells we can control.
-                let p = div / s;
-                self.cell_mut(idx).pressure -= cp * p;
+                let div_normed = div / s;
+                self.cell_mut(idx).pressure -= cp * div_normed;
 
                 // Add outflow-part to inflows to reach net 0-outflow.
-                self.cell_mut(idx).velocity.front += r * nbs_s[0] * p;
+                self.cell_mut(idx).velocity.back += r * nbs_s[0] * div_normed;
 
                 // Subtract outflow-part to outflows to iteratively reach net 0-outflow (div(v) == 0).
-                self.cell_mut(nbs[pos_idx][0]).velocity.front.x -= r * (nbs_s[pos_idx].x) * p;
-                self.cell_mut(nbs[pos_idx][1]).velocity.front.y -= r * nbs_s[pos_idx].y * p;
+                self.cell_mut(nbs[pos_idx][0]).velocity.back.x -=
+                    r * (nbs_s[pos_idx].x) * div_normed;
+
+                self.cell_mut(nbs[pos_idx][1]).velocity.back.y -= r * nbs_s[pos_idx].y * div_normed;
             }
         }
 
         for idx in self.iter_index() {
-            if self.cell(idx).mode == CellTypes::Solid {
-                continue;
-            }
-            self.cell_mut(idx).velocity.swap();
+            let div = self.cell(idx).div;
+            self.stats[0].div = Scalar::min(self.stats[0].div, div);
+            self.stats[1].div = Scalar::max(self.stats[1].div, div);
+
+            let p = self.cell(idx).pressure;
+            self.stats[0].pressure = Scalar::min(self.stats[0].pressure, p);
+            self.stats[1].pressure = Scalar::max(self.stats[1].pressure, p);
         }
+
+        info!(
+            log,
+            "Divergence range: {:.4?}, {:.4?}", self.stats[0].div, self.stats[1].div
+        );
+        info!(
+            log,
+            "Pressure range: {:.4?}, {:.4?}", self.stats[0].pressure, self.stats[1].pressure
+        );
     }
 
     fn advect(&mut self, log: &slog::Logger, dt: Scalar) {
+
         for idx in self.iter_index() {
+          self.cell_mut(idx).velocity.front = self.cell(idx).velocity.back;
+        }
+
+        for idx in self.iter_index_inside() {
             if self.cell(idx).mode == CellTypes::Solid {
                 continue;
             }
 
             let nbs = Grid::get_neighbors_indices(idx);
 
-            let get_vel = [
-                |cell: &Cell| cell.velocity.back[0],
-                |cell: &Cell| cell.velocity.back[1],
-            ];
-
             // Advect the two staggered grids (x and then y-direction).
             for dir in 0..2 {
                 // Is the negative neighbor a solid cell, then do not advect this velocity.
-                match self.cell_opt(nbs[0][dir]) {
-                    Some(cell) => {
-                        if cell.mode == CellTypes::Solid {
-                            continue;
-                        }
-                    }
-                    None => continue,
-                };
+                if self.cell(nbs[0][dir]).mode == CellTypes::Solid {
+                    continue;
+                }
 
                 let mut pos = idx.cast::<Scalar>() * self.cell_width + self.offsets[dir];
-                let mut vel = self.cell(idx).velocity.back;
+                let mut vel: Vector2 = self.cell(idx).velocity.back;
 
-                vel[dir] = self.sample_field(log, idx!(0, 0), self.dim, pos, dir, get_vel[dir]);
+                let sample = |pos: Vector2, dir: usize| {
+                    return self.sample_field(
+                        log,
+                        idx!(1, 1),
+                        self.dim - idx!(1, 1),
+                        pos,
+                        dir,
+                        |cell: &Cell| cell.velocity.back[dir],
+                    );
+                };
+
+                let other_dir = (dir + 1) % 2;
+                vel[other_dir] = sample(pos, other_dir);
 
                 // Get position of particle which reached this position.
                 pos = pos - dt * vel;
+                //debug!(log, "Idx: {}", idx);
 
                 // Set the past velocity at this cell.
-                self.cell_mut(idx).velocity.front[dir] =
-                    self.sample_field(log, idx!(0, 0), self.dim, pos, dir, get_vel[dir]);
+                self.cell_mut(idx).velocity.front[dir] = sample(pos, dir);
             }
         }
 
         for idx in self.iter_index() {
-            if self.cell(idx).mode == CellTypes::Solid {
-                continue;
-            }
             self.cell_mut(idx).velocity.swap();
         }
+
     }
 }
 
 impl Grid {
     pub fn sample_field<F: Fn(&Cell) -> Scalar>(
         &self,
-        _log: &Logger,
+        log: &Logger,
         min: Index2,
         max: Index2,
         mut pos: Vector2,
@@ -449,9 +495,11 @@ impl Grid {
 
         index = clamp_index(index);
         let pos_cell = pos - index.cast::<Scalar>() * h;
-        let alpha = pos_cell * h_inv;
+        let alpha = Grid::clamp_to_range(vec2!(0.0, 0.0), vec2!(1.0, 1.0), pos_cell * h_inv);
 
-        // Get all neighbor indices. (column major).
+        // debug!(log, "Sample at: {}", index);
+
+        // Get all neighbor indices (column major).
         // [ (0,1), (1,1)
         //   (0,0), (1,0) ]
         let nbs = [

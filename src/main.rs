@@ -19,16 +19,16 @@ struct CLIArgs {
     #[arg(short = 'o', long, default_value_t = String::from("./frames/frame-{}.png"))]
     output: String,
 
-    #[arg(short = 'e', long = "time-end", default_value_t = 0.4)]
+    #[arg(short = 'e', long = "time-end", default_value_t = 0.02)]
     time_end: Scalar,
 
-    #[arg(short = 't', long = "timestep", default_value_t = 0.1)]
-    timestep: Scalar,
+    #[arg(short = 't', long = "timestep", default_value_t = 0.016)]
+    dt: Scalar,
 
     #[arg(long = "density", default_value_t = 1000.0)]
     density: Scalar,
 
-    #[arg(long = "dim", default_value = "500, 100", value_parser = parse_vector::<usize, 2>)]
+    #[arg(long = "dim", default_value = "200, 100", value_parser = parse_vector::<usize, 2>)]
     dim: Index2,
 
     #[arg(short = 'g', long = "gravity", default_value = "0.0, 9.81",  value_parser = parse_vector::<Scalar, 2>)]
@@ -88,8 +88,8 @@ fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<TimeSt
         cli.gravity
     };
 
-
-    grid.set_obstacle((grid.dim / 2).cast::<Scalar>(), 10.0);
+    let p = idx!(grid.dim.x / 4, grid.dim.y / 2);
+    grid.set_obstacle(p.cast::<Scalar>(), 15.0);
 
     let objs: Vec<Box<dyn Integrate>> = vec![grid];
 
@@ -111,14 +111,18 @@ fn assert_output_path(output: &str) {
 }
 
 fn main() -> GenericResult<()> {
-    let log = create_logger();
     let cli = CLIArgs::parse();
+    return run(&cli);
+}
+
+fn run(cli: &CLIArgs) -> GenericResult<()> {
+    let log = create_logger();
 
     assert_output_path(&cli.output);
 
     let mut timestepper = setup_scene(&log, &cli)?;
 
-    let dt = cli.timestep;
+    let dt = cli.dt;
     let n_steps = (cli.time_end / dt) as u64;
 
     for step in 0..n_steps {
@@ -136,21 +140,37 @@ fn plot(
     cli_args: &CLIArgs,
     step: u64,
 ) -> Result<(), Box<dyn Error>> {
-    let file = cli_args.output.replace("{}", &format!("{}", step));
 
     let grid = timestepper.objects[0]
         .as_any()
         .downcast_ref::<Grid>()
         .expect("Not a grid");
 
-    let norm_val = 6.0;
-    let vel_get = |idx: Index2| {
-        if grid.cell(idx).mode == CellTypes::Solid {
-            return None;
-        }
-        return Some(grid.cell(idx).velocity.back.norm() / norm_val);
+    let p_range = grid.stats[1].pressure - grid.stats[0].pressure;
+    let press_get = |idx: Index2| {
+        // if grid.cell(idx).mode == CellTypes::Solid {
+        //     return None;
+        // }
+        return Some((grid.cell(idx).pressure - grid.stats[0].pressure) / p_range);
     };
 
-    info!(log, "Saving plots to '{}'.", file);
-    return plot::grid(dim!(800, 600), grid.dim, vel_get, file, None);
+    let vel_get = |idx: Index2| {
+        // if grid.cell(idx).mode == CellTypes::Solid {
+        //     return None;
+        // }
+        return Some(grid.cell(idx).velocity.back.norm() / 5.0);
+    };
+
+    let text = format!(
+        "frame: {:5.0}, pressure: [{:.3} , {:.3}], div: [{:.3} , {:.3}]",
+        step, grid.stats[0].pressure, grid.stats[1].pressure, grid.stats[0].div, grid.stats[1].div
+    );
+
+    info!(log, "Saving plots.");
+
+    let mut file = cli_args.output.replace("{}", &format!("vel-{:06}", step));
+    plot::grid(dim!(800, 600), grid.dim, vel_get, file, None, &text)?;
+
+    file = cli_args.output.replace("{}", &format!("press-{:06}", step));
+    return plot::grid(dim!(800, 600), grid.dim, press_get, file, None, &text);
 }

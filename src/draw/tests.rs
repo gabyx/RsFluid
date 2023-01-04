@@ -15,7 +15,7 @@ mod tests {
         };
 
         let file = "test.png";
-        grid(dim!(500, 500), dim!(300, 300), get_data, file.to_string(), None)?;
+        grid(dim!(500, 500), dim!(300, 300), get_data, file.to_string(), None, "Nothing".to_string())?;
 
         Ok(())
     }

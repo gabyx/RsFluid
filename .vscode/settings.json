@@ -1,12 +1,14 @@
 {
     "cSpell.words": [
         "curr",
+        "diveregence",
         "downcasting",
         "frontback",
         "grav",
         "incompress",
         "Overrelaxation",
         "Timestep",
-        "timestepper"
+        "timestepper",
+        "ulps"
     ]
 }

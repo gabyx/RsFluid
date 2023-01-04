@@ -3,7 +3,7 @@ use slog::{info, Logger};
 use std::any::Any;
 
 pub trait Integrate {
-
+    fn reset(&mut self, _log: &Logger) {}
     fn integrate(&mut self, _log: &Logger, _dt: Scalar, _gravity: Vector2) {}
     fn solve_incompressibility(
         &mut self,
@@ -14,12 +14,7 @@ pub trait Integrate {
     ) {
     }
 
-    fn advect(
-        &mut self,
-        _log: &Logger,
-        _dt: Scalar
-    ) {
-    }
+    fn advect(&mut self, _log: &Logger, _dt: Scalar) {}
 
     // For downcasting.
     fn as_any(&self) -> &dyn Any;
@@ -55,13 +50,20 @@ impl<'a> TimeStepper<'a> {
     }
 
     pub fn compute_step(&mut self, dt: Scalar) {
-        info!(self.log, "Time at: '{:0.3}'.", self.t,);
+      info!(self.log, "Time at: '{:0.3}'.", self.t);
 
+        self.reset();
         self.integrate(dt);
         self.solve_incompressibility(dt);
         self.advect(dt);
 
         self.t = self.t + dt;
+    }
+
+    fn reset(&mut self) {
+       for obj in self.objects.iter_mut() {
+            obj.reset(self.log);
+        }
     }
 
     fn integrate(&mut self, dt: Scalar) {
@@ -92,5 +94,4 @@ impl<'a> TimeStepper<'a> {
             obj.advect(self.log, dt);
         }
     }
-
 }
