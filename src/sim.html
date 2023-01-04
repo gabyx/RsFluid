@@ -126,7 +126,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         var n = this.numY;
         var cp = this.density * this.h / dt;
 
-        for (var iter = 0; iter < numIters; iter++) {
+        for (var iter = 0; iter < 100; iter++) {
 
           for (var i = 1; i < this.numX - 1; i++) {
             for (var j = 1; j < this.numY - 1; j++) {
@@ -235,29 +235,29 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         var h = this.h;
         var h2 = 0.5 * h;
 
-        for (var i = 1; i < this.numX; i++) {
-          for (var j = 1; j < this.numY; j++) {
+        for (var i = 1; i < this.numX-1; i++) {
+          for (var j = 1; j < this.numY-1; j++) {
 
             cnt++;
 
             // u component
-            if (this.s[i * n + j] != 0.0 && this.s[(i - 1) * n + j] != 0.0 && j < this.numY - 1) {
+            if (this.s[i * n + j] != 0.0 && this.s[(i - 1) * n + j] != 0.0) {
               var x = i * h;
               var y = j * h + h2;
               var u = this.u[i * n + j];
-              var v = this.avgV(i, j);
-              //						var v = this.sampleField(x,y, V_FIELD);
+              //var v = this.avgV(i, j);
+              						var v = this.sampleField(x,y, V_FIELD);
               x = x - dt * u;
               y = y - dt * v;
               u = this.sampleField(x, y, U_FIELD);
               this.newU[i * n + j] = u;
             }
             // v component
-            if (this.s[i * n + j] != 0.0 && this.s[i * n + j - 1] != 0.0 && i < this.numX - 1) {
+            if (this.s[i * n + j] != 0.0 && this.s[i * n + j - 1] != 0.0) {
               var x = i * h + h2;
               var y = j * h;
-              var u = this.avgU(i, j);
-              //						var u = this.sampleField(x,y, U_FIELD);
+              //var u = this.avgU(i, j);
+              						var u = this.sampleField(x,y, U_FIELD);
               var v = this.v[i * n + j];
               x = x - dt * u;
               y = y - dt * v;
@@ -305,9 +305,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         this.p.fill(0.0);
         this.solveIncompressibility(numIters, dt);
 
-        this.extrapolate();
+        // this.extrapolate();
         this.advectVel(dt);
-        this.advectSmoke(dt);
+        // this.advectSmoke(dt);
       }
     }
 
@@ -385,7 +385,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
               s = 0.0;	// solid
             f.s[i * n + j] = s
 
-            if (i == 1) {
+            if (i == 1 && j > 1 && j < f.numY - 1) {
               f.u[i * n + j] = inVel;
             }
           }
@@ -401,8 +401,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         setObstacle(0.4, 0.5, true)
 
         scene.gravity = 0.0;
-        scene.showPressure = false;
-        scene.showSmoke = true;
+        scene.showPressure = true;
+        scene.showSmoke = false;
         scene.showStreamlines = false;
         scene.showVelocities = false;
 
@@ -632,7 +632,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
       }
 
       if (scene.showPressure) {
-        var s = "pressure: " + minP.toFixed(0) + " - " + maxP.toFixed(0) + " N/m";
+        var s = "pressure: " + minP.toFixed(3) + " - " + maxP.toFixed(3) + " N/m" + ", frame: " + scene.frameNr + ", dt: " + scene.dt;
         c.fillStyle = "#000000";
         c.font = "16px Arial";
         c.fillText(s, 10, 35);
