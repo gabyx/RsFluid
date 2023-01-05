@@ -278,6 +278,10 @@ impl Grid {
             log,
             "Pressure range: {:.4?}, {:.4?}", self.stats[0].pressure, self.stats[1].pressure
         );
+        info!(
+            log,
+            "Velocity range: {:.4?}, {:.4?}", self.stats[0].velocity_norm, self.stats[1].velocity_norm
+        );
     }
 }
 

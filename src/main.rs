@@ -75,7 +75,7 @@ fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<TimeSt
             }
 
             if grid.is_inside_border(idx) && idx.x == 1 {
-                grid.cell_mut(idx).velocity.back = vec2!(10.0, 0.0);
+                grid.cell_mut(idx).velocity.back = vec2!(5.0, 0.0);
             }
         }
     } else {
@@ -89,7 +89,7 @@ fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<TimeSt
     };
 
     let p = idx!(grid.dim.x / 4, grid.dim.y / 2);
-    grid.set_obstacle(p.cast::<Scalar>(), 15.0);
+    grid.set_obstacle(p.cast::<Scalar>(), grid.dim.y as Scalar * 0.3 / 2.0);
 
     let objs: Vec<Box<dyn Integrate>> = vec![grid];
 
@@ -123,6 +123,10 @@ fn run(cli: &CLIArgs) -> GenericResult<()> {
     let mut timestepper = setup_scene(&log, &cli)?;
 
     let dt = cli.dt;
+    if dt <= 0.0 {
+        panic!("Timestep is invalid.")
+    }
+
     let n_steps = (cli.time_end / dt) as u64;
 
     for step in 0..n_steps {
@@ -153,16 +157,23 @@ fn plot(
         return Some((grid.cell(idx).pressure - grid.stats[0].pressure) / p_range);
     };
 
+    let v_range = grid.stats[1].velocity_norm - grid.stats[0].velocity_norm;
     let vel_get = |idx: Index2| {
         if grid.cell(idx).mode == CellTypes::Solid {
             return None;
         }
-        return Some(grid.cell(idx).velocity.back.norm() / 5.0);
+        return Some(grid.cell(idx).velocity.back.norm() - grid.stats[0].velocity_norm / v_range);
     };
 
     let text = format!(
-        "frame: {:5.0}, pressure: [{:.3} , {:.3}], div: [{:.3} , {:.3}]",
-        step, grid.stats[0].pressure, grid.stats[1].pressure, grid.stats[0].div, grid.stats[1].div
+        "frame: {:5.0}, pressure: [{:.3} , {:.3}], div: [{:.3} , {:.3}], vel: [{:.3} , {:.3}]",
+        step,
+        grid.stats[0].pressure,
+        grid.stats[1].pressure,
+        grid.stats[0].div,
+        grid.stats[1].div,
+        grid.stats[0].velocity_norm,
+        grid.stats[1].velocity_norm
     );
 
     info!(log, "Saving plots.");
