@@ -384,7 +384,6 @@ impl Integrate for Grid {
 
                     // Just sample on the inside grid by clamping.
                     self.cell_mut(idx).velocity.back[dir] = self.sample_field(
-                        log,
                         idx!(1, 1),
                         self.dim - idx!(1, 1),
                         pos,
@@ -472,10 +471,10 @@ impl Integrate for Grid {
         }
 
         self.compute_stats(&log);
-
     }
 
-    fn advect(&mut self, log: &slog::Logger, dt: Scalar) {
+    fn advect(&mut self, _log: &slog::Logger, dt: Scalar) {
+
         for idx in self.iter_index() {
             self.cell_mut(idx).velocity.front = self.cell(idx).velocity.back;
         }
@@ -499,7 +498,6 @@ impl Integrate for Grid {
 
                 let sample = |pos: Vector2, dir: usize| {
                     return self.sample_field(
-                        log,
                         idx!(1, 1),
                         self.dim - idx!(1, 1),
                         pos,
@@ -529,7 +527,6 @@ impl Integrate for Grid {
 impl Grid {
     pub fn sample_field<F: Fn(&Cell) -> Scalar>(
         &self,
-        log: &Logger,
         min: Index2,
         max: Index2,
         mut pos: Vector2,

@@ -2,6 +2,7 @@ use slog::{o, Drain};
 use slog_async;
 use std::io;
 
+#[allow(dead_code)]
 fn no_out(_io: &mut dyn io::Write) -> io::Result<()> {
     return Ok(());
 }

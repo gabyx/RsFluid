@@ -19,7 +19,7 @@ struct CLIArgs {
     #[arg(short = 'o', long, default_value_t = String::from("./frames/frame-{}.png"))]
     output: String,
 
-    #[arg(short = 'e', long = "time-end", default_value_t = 0.02)]
+    #[arg(short = 'e', long = "time-end", default_value_t = 5.0)]
     time_end: Scalar,
 
     #[arg(short = 't', long = "timestep", default_value_t = 0.016)]
@@ -34,7 +34,7 @@ struct CLIArgs {
     #[arg(short = 'g', long = "gravity", default_value = "0.0, 9.81",  value_parser = parse_vector::<Scalar, 2>)]
     gravity: Vector2,
 
-    #[arg(long = "incompress-iters", default_value_t = 40)]
+    #[arg(long = "incompress-iters", default_value_t = 100)]
     incompress_iter: u64,
 
     #[arg(long = "scene-index", default_value_t = 0)]

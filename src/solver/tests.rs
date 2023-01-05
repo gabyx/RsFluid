@@ -52,25 +52,17 @@ mod tests {
         let max = grid.dim;
 
         let eps = Scalar::EPSILON;
-        let val = grid.sample_field(&log, min, max, vec2!(1.0, 1.0 - eps), 1, sample_back_vel);
+        let val = grid.sample_field(min, max, vec2!(1.0, 1.0 - eps), 1, sample_back_vel);
         assert!(approx_eq!(Scalar, val, 3.5, ulps = 10), "Val: {}", val);
 
-        let val = grid.sample_field(
-            &log,
-            min,
-            max,
-            vec2!(1.5 - eps, 1.0 - eps),
-            1,
-            sample_back_vel,
-        );
+        let val = grid.sample_field(min, max, vec2!(1.5 - eps, 1.0 - eps), 1, sample_back_vel);
         assert!(approx_eq!(Scalar, val, 4.0, ulps = 10), "Val: {}", val);
 
-        let val = grid.sample_field(&log, min, max, vec2!(1.0, 0.5), 1, sample_back_vel);
+        let val = grid.sample_field(min, max, vec2!(1.0, 0.5), 1, sample_back_vel);
         assert!(approx_eq!(Scalar, val, 2.5, ulps = 10), "Val: {}", val);
 
         // Out of defined values field.
         let val = grid.sample_field(
-            &log,
             min,
             max,
             vec2!(2.5 - 2.0 * eps, 1.0 - eps),

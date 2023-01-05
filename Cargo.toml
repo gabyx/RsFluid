@@ -7,7 +7,7 @@ edition = "2021"
 
 
 [dependencies]
-slog = { version = "2.5.2", features = ["max_level_trace", "release_max_level_info"] }
+slog = { version = "2.5.2", features = ["max_level_trace", "release_max_level_error"] }
 slog-term = "2.9.0"
 slog-async = "2.7.0"
 nalgebra = "0.31.4"
@@ -19,3 +19,9 @@ colorgrad = "0.6.2"
 itertools = "0.10.5"
 simple-error = "0.1.9"
 rayon = "1.6.1"
+
+[profile.release-bench]
+inherits = "release"
+opt-level = 3
+overflow-checks = false
+debug = 2
