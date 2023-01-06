@@ -37,4 +37,4 @@ To create the video with `30` frames use:
 
 # Video
 
-[![Liquid in Fluid](docs/frame-example.png)](https://www.youtube.com/watch?v=wuVyjO7dkaw)
+[![Liquid in Fluid](docs/frame-example.png)](https://youtu.be/jhgwYL9K-pI)

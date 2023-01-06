@@ -9,10 +9,10 @@ timestep=$(echo "scale=3; 1.0/$frameRate" | bc)
 frameRateVideo="$frameRate"
 
 cargo run --release --bin rustofluid -- \
-    -e 10.0 \
+    -e 15.0 \
     -t "$timestep" \
     --show-progress \
-    --incompress-iters 40 \
+    --incompress-iters 150 \
     --dim "1920, 640" \
     --plot-dim "1920, 640"
 
