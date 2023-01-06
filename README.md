@@ -26,6 +26,9 @@ You can start the simulation with
 cargo run --release --bin rustofluid -- -e 10.0 -t "$timestep" --incompress-iters 100 --dim "400,200"
 ```
 
+To install `cargo` use
+[this help here](https://doc.rust-lang.org/cargo/getting-started/installation.html).
+
 To create the video with `30` frames use:
 
 ```shell
