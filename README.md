@@ -34,6 +34,4 @@ To create the video with `30` frames use:
 
 # Video
 
-![[Liquid.mp4](https://www.youtube.com/watch?v=I1DTGRb3dvA)](docs/frame-example.png)
-![Pressure.mp4](docs/video-smoke.mp4)
-![Velocity-Norm.mp4](docs/video-smoke.mp4)
+[![Liquid in Fluid](docs/frame-example.png)](https://www.youtube.com/watch?v=I1DTGRb3dvA)
