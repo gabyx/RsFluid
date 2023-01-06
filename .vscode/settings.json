@@ -6,6 +6,7 @@
         "frontback",
         "grav",
         "incompress",
+        "manips",
         "Overrelaxation",
         "Timestep",
         "timestepper",

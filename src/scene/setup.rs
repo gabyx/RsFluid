@@ -1,10 +1,9 @@
 use std::fmt::Debug;
 use std::str::FromStr;
 
-
 use crate::log::*;
 use crate::scene::grid::{CellGetter, CellTypes, Grid};
-use crate::scene::timestepper::{Integrate, TimeStepper};
+use crate::scene::timestepper::{Integrate, Manipulator, TimeStepper};
 use crate::types::*;
 use clap::Parser;
 use nalgebra as na;
@@ -61,7 +60,45 @@ pub struct CLIArgs {
 }
 
 pub fn parse_args() -> CLIArgs {
-  return CLIArgs::parse();
+    return CLIArgs::parse();
+}
+
+struct AddSmokeBar {
+    pub center: Index2,
+    pub height: usize,
+}
+
+impl Manipulator for AddSmokeBar {
+    fn manipulate(
+        &self,
+        log: &Logger,
+        t: Scalar,
+        dt: Scalar,
+        objects: &mut Vec<Box<dyn Integrate>>,
+    ) {
+        debug!(log, "Add smoke at {}, {}", t, dt);
+
+        let grid = objects
+            .get_mut(0)
+            .expect("No objects.")
+            .as_mut()
+            .as_any_mut()
+            .downcast_mut::<Grid>()
+            .expect("");
+
+        // Setup smoke on border.
+        let y_range = [
+            self.center.y - (self.height / 2),
+            self.center.y + (self.height / 2),
+        ];
+        (y_range[0]..y_range[1]).for_each(|y| {
+            let idx = idx!(0, y);
+            if let Some(cell) = grid.cell_mut_opt(idx) {
+                debug!(log, "index {}", idx);
+                cell.smoke.back = 1.0;
+            }
+        });
+    }
 }
 
 pub fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<TimeStepper<'t>>> {
@@ -97,14 +134,6 @@ pub fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<Ti
             if is_inside && idx.x == 1 {
                 grid.cell_mut(idx).velocity.back = velocity_in;
             }
-
-            // Setup smoke on border.
-            if idx.x == 0
-                && idx.y as Scalar * grid.cell_width <= (0.5 + 1.5 * obstacle_size_rel) * height
-                && idx.y as Scalar * grid.cell_width >= (0.5 - 1.5 * obstacle_size_rel) * height
-            {
-                grid.cell_mut(idx).smoke.back = 1.0;
-            }
         }
     } else {
         bail!("Not implemented scene index '{}'.", cli.scene_idx);
@@ -120,6 +149,14 @@ pub fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<Ti
     let p = vec2!(width * 0.25, height * 0.5);
     grid.set_obstacle(p, obstacle_size / 2.0, None);
 
+
+    // Set manipulator (for smoke).
+    let smoke_adder = Box::new(AddSmokeBar {
+        center: idx!(1, grid.dim.y / 2),
+        height: (1.1 * obstacle_size_rel * grid.dim.y as Scalar) as usize,
+    });
+
+    let manips: Vec<Box<dyn Manipulator>> = vec![smoke_adder];
     let objs: Vec<Box<dyn Integrate>> = vec![grid];
 
     let timestepper = Box::new(TimeStepper::new(
@@ -128,6 +165,7 @@ pub fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<Ti
         grav,
         cli.incompress_iter,
         objs,
+        manips,
     ));
 
     return Ok(timestepper);

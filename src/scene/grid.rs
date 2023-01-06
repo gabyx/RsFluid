@@ -348,10 +348,18 @@ impl Integrate for Cell {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl Integrate for Grid {
     fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 
@@ -489,7 +497,9 @@ impl Integrate for Grid {
 }
 
 impl Grid {
-    fn advect_velocity(&mut self, _log: &slog::Logger, dt: Scalar) {
+    fn advect_velocity(&mut self, log: &slog::Logger, dt: Scalar) {
+        debug!(log, "Advect velocity.");
+
         self.cells
             .par_iter_mut()
             .for_each(|c| c.velocity.front = c.velocity.back);
@@ -535,7 +545,9 @@ impl Grid {
 
         self.cells.par_iter_mut().for_each(|c| c.velocity.swap());
     }
-    fn advect_smoke(&mut self, _log: &slog::Logger, dt: Scalar) {
+    fn advect_smoke(&mut self, log: &slog::Logger, dt: Scalar) {
+        debug!(log, "Advect smoke.");
+
         self.cells
             .par_iter_mut()
             .for_each(|c| c.smoke.front = c.smoke.back);
@@ -559,8 +571,8 @@ impl Grid {
             pos = pos - dt * vel;
 
             self.cell_mut(idx).smoke.front = self.sample_field(
-                idx!(1, 1),
-                self.dim - idx!(1, 1),
+                idx!(0, 0),
+                self.dim - idx!(0, 0),
                 pos,
                 None,
                 |cell: &Cell| cell.smoke.back,

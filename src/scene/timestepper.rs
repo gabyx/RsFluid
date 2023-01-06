@@ -18,6 +18,19 @@ pub trait Integrate {
 
     // For downcasting.
     fn as_any(&self) -> &dyn Any;
+
+    // For downcasting.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+pub trait Manipulator {
+    fn manipulate(
+        &self,
+        log: &Logger,
+        t: Scalar,
+        dt: Scalar,
+        objects: &mut Vec<Box<dyn Integrate>>,
+    );
 }
 
 pub struct TimeStepper<'a> {
@@ -27,6 +40,7 @@ pub struct TimeStepper<'a> {
 
     t: Scalar,
     pub objects: Vec<Box<dyn Integrate>>,
+    pub manipulators: Vec<Box<dyn Manipulator>>,
 
     log: &'a Logger,
 }
@@ -38,6 +52,7 @@ impl<'a> TimeStepper<'a> {
         gravity: Vector2,
         incompress_iters: u64,
         objects: Vec<Box<dyn Integrate>>,
+        manipulators: Vec<Box<dyn Manipulator>>,
     ) -> Self {
         return TimeStepper {
             log,
@@ -45,6 +60,7 @@ impl<'a> TimeStepper<'a> {
             density,
             incompress_iters,
             objects,
+            manipulators,
             t: 0.0,
         };
     }
@@ -55,6 +71,8 @@ impl<'a> TimeStepper<'a> {
         }
 
         info!(self.log, "Time at: '{:0.3}'.", self.t);
+        self.manipulate(self.t, dt);
+
         self.reset();
         self.integrate(dt);
         self.solve_incompressibility(dt);
@@ -66,6 +84,12 @@ impl<'a> TimeStepper<'a> {
     fn reset(&mut self) {
         for obj in self.objects.iter_mut() {
             obj.reset(self.log);
+        }
+    }
+
+    fn manipulate(&mut self, t: Scalar, dt: Scalar) {
+        for manip in self.manipulators.iter_mut() {
+            manip.manipulate(self.log, t, dt, &mut self.objects);
         }
     }
 

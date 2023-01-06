@@ -1,9 +1,9 @@
-use std::error::Error;
-use crate::plotting;
-use crate::types::*;
 use crate::log::*;
+use crate::plotting;
+use crate::scene::grid::{CellGetter, CellTypes, Grid};
 use crate::scene::timestepper::TimeStepper;
-use crate::scene::grid::{Grid, CellGetter, CellTypes};
+use crate::types::*;
+use std::error::Error;
 
 pub fn save_plots(
     log: &Logger,
@@ -32,6 +32,13 @@ pub fn save_plots(
         return Some(grid.cell(idx).velocity.back.norm() - grid.stats[0].velocity_norm / v_range);
     };
 
+    let smoke_get = |idx: Index2| {
+        if grid.cell(idx).mode == CellTypes::Solid {
+            return None;
+        }
+        return Some(0.7 * grid.cell(idx).smoke.back);
+    };
+
     let text = format!(
         "frame: {:5.0}, pressure: [{:.3} , {:.3}], div: [{:.3} , {:.3}], vel: [{:.3} , {:.3}]",
         step,
@@ -49,5 +56,8 @@ pub fn save_plots(
     plotting::grid(dim!(1600, 800), grid.dim, vel_get, file, None, &text)?;
 
     file = output.replace("{}", &format!("press-{:06}", step));
-    return plotting::grid(dim!(1600, 800), grid.dim, press_get, file, None, &text);
+    plotting::grid(dim!(1600, 800), grid.dim, press_get, file, None, &text)?;
+
+    file = output.replace("{}", &format!("smoke-{:06}", step));
+    return plotting::grid(dim!(1600, 800), grid.dim, smoke_get, file, None, &text);
 }
