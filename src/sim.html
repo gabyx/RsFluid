@@ -235,8 +235,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         var h = this.h;
         var h2 = 0.5 * h;
 
-        for (var i = 1; i < this.numX-1; i++) {
-          for (var j = 1; j < this.numY-1; j++) {
+        for (var i = 1; i < this.numX - 1; i++) {
+          for (var j = 1; j < this.numY - 1; j++) {
 
             cnt++;
 
@@ -246,7 +246,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
               var y = j * h + h2;
               var u = this.u[i * n + j];
               //var v = this.avgV(i, j);
-              						var v = this.sampleField(x,y, V_FIELD);
+              var v = this.sampleField(x, y, V_FIELD);
               x = x - dt * u;
               y = y - dt * v;
               u = this.sampleField(x, y, U_FIELD);
@@ -257,7 +257,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
               var x = i * h + h2;
               var y = j * h;
               //var u = this.avgU(i, j);
-              						var u = this.sampleField(x,y, U_FIELD);
+              var u = this.sampleField(x, y, U_FIELD);
               var v = this.v[i * n + j];
               x = x - dt * u;
               y = y - dt * v;
@@ -338,17 +338,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
       scene.dt = 1.0 / 60.0;
       scene.numIters = 40;
-
+      console.info("Scene: ", sceneNr)
       var res = 100;
 
-      if (sceneNr == 0)
-        res = 50;
-      else if (sceneNr == 3)
-        res = 200;
+      // if (sceneNr == 0)
+      //   res = 50;
+      // else if (sceneNr == 3)
+      //   res = 200;
 
       var domainHeight = 1.0;
       var domainWidth = domainHeight / simHeight * simWidth;
       var h = domainHeight / res;
+      console.info("h: ", h)
 
       var numX = Math.floor(domainWidth / h);
       var numY = Math.floor(domainHeight / h);
@@ -361,19 +362,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
       if (sceneNr == 0) {   		// tank
 
-        for (var i = 0; i < f.numX; i++) {
-          for (var j = 0; j < f.numY; j++) {
-            var s = 1.0;	// fluid
-            if (i == 0 || i == f.numX - 1 || j == 0)
-              s = 0.0;	// solid
-            f.s[i * n + j] = s
-          }
-        }
-        scene.gravity = -9.81;
-        scene.showPressure = true;
-        scene.showSmoke = false;
-        scene.showStreamlines = false;
-        scene.showVelocities = false;
+        // for (var i = 0; i < f.numX; i++) {
+        //   for (var j = 0; j < f.numY; j++) {
+        //     var s = 1.0;	// fluid
+        //     if (i == 0 || i == f.numX - 1 || j == 0)
+        //       s = 0.0;	// solid
+        //     f.s[i * n + j] = s
+        //   }
+        // }
+        // scene.gravity = -9.81;
+        // scene.showPressure = true;
+        // scene.showSmoke = false;
+        // scene.showStreamlines = false;
+        // scene.showVelocities = false;
       }
       else if (sceneNr == 1 || sceneNr == 3) { // vortex shedding
 
@@ -406,23 +407,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         scene.showStreamlines = false;
         scene.showVelocities = false;
 
-        if (sceneNr == 3) {
-          scene.dt = 1.0 / 120.0;
-          scene.numIters = 100;
-          scene.showPressure = true;
-        }
+        // if (sceneNr == 3) {
+        //   scene.dt = 1.0 / 120.0;
+        //   scene.numIters = 100;
+        //   scene.showPressure = true;
+        // }
 
       }
-      else if (sceneNr == 2) { // paint
+      // else if (sceneNr == 2) { // paint
 
-        scene.gravity = 0.0;
-        scene.overRelaxation = 1.0;
-        scene.showPressure = false;
-        scene.showSmoke = true;
-        scene.showStreamlines = false;
-        scene.showVelocities = false;
-        scene.obstacleRadius = 0.1;
-      }
+      //   scene.gravity = 0.0;
+      //   scene.overRelaxation = 1.0;
+      //   scene.showPressure = false;
+      //   scene.showSmoke = true;
+      //   scene.showStreamlines = false;
+      //   scene.showVelocities = false;
+      //   scene.obstacleRadius = 0.1;
+      // }
 
       document.getElementById("streamButton").checked = scene.showStreamlines;
       document.getElementById("velocityButton").checked = scene.showVelocities;
@@ -476,12 +477,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
       var h = f.h;
 
-      minP = f.p[0];
-      maxP = f.p[0];
+      minP = 0.0
+      maxP = 0.0;
 
       for (var i = 0; i < f.numCells; i++) {
-        minP = Math.min(minP, f.p[i]);
-        maxP = Math.max(maxP, f.p[i]);
+        minP = Math.min(minP, Math.sqrt(f.u[i] * f.u[i] + f.v[i] * f.v[i]));
+        maxP = Math.max(maxP, Math.sqrt(f.u[i] * f.u[i] + f.v[i] * f.v[i]));
       }
 
       id = c.getImageData(0, 0, canvas.width, canvas.height)
@@ -492,7 +493,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
         for (var j = 0; j < f.numY; j++) {
 
           if (scene.showPressure) {
-            var p = f.p[i * n + j];
+            var p = Math.sqrt(f.u[i * n + j]*f.u[i * n + j] + f.v[i * n + j]*f.v[i * n + j]);
             var s = f.m[i * n + j];
             color = getSciColor(p, minP, maxP);
             if (scene.showSmoke) {

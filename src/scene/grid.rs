@@ -1,5 +1,5 @@
 use crate::log::{debug, info, warn, Logger};
-use crate::solver::timestepper::Integrate;
+use crate::scene::timestepper::Integrate;
 use crate::types::*;
 use itertools::Itertools;
 use rayon::prelude::*;
@@ -243,13 +243,16 @@ impl Grid {
         ];
     }
 
-    pub fn set_obstacle(&mut self, pos: Vector2, radius: f64) {
+    pub fn set_obstacle(&mut self, pos: Vector2, radius: f64, velocity: Option<Vector2>) {
+        let vel = velocity.unwrap_or(Vector2::zeros());
+
         for idx in self.iter_index_inside() {
-            let c = idx.cast::<Scalar>() * self.cell_width
-                + vec2!(self.cell_width * 0.5, self.cell_width * 0.5);
+            let c = (idx.cast::<Scalar>() + vec2!(0.5, 0.5)) * self.cell_width;
 
             if (c - pos).norm_squared() <= radius * radius {
-                self.cell_mut(idx).mode = CellTypes::Solid;
+                let c = self.cell_mut(idx);
+                c.mode = CellTypes::Solid;
+                c.velocity.back = vel;
             } else {
                 self.cell_mut(idx).mode = CellTypes::Fluid;
             }
@@ -280,7 +283,9 @@ impl Grid {
         );
         info!(
             log,
-            "Velocity range: {:.4?}, {:.4?}", self.stats[0].velocity_norm, self.stats[1].velocity_norm
+            "Velocity range: {:.4?}, {:.4?}",
+            self.stats[0].velocity_norm,
+            self.stats[1].velocity_norm
         );
     }
 }
@@ -391,7 +396,7 @@ impl Integrate for Grid {
                         idx!(1, 1),
                         self.dim - idx!(1, 1),
                         pos,
-                        dir,
+                        Some(dir),
                         |cell: &Cell| cell.velocity.back[dir],
                     );
                 }
@@ -477,11 +482,17 @@ impl Integrate for Grid {
         self.compute_stats(&log);
     }
 
-    fn advect(&mut self, _log: &slog::Logger, dt: Scalar) {
+    fn advect(&mut self, log: &slog::Logger, dt: Scalar) {
+        self.advect_velocity(log, dt);
+        self.advect_smoke(log, dt);
+    }
+}
 
-        for idx in self.iter_index() {
-            self.cell_mut(idx).velocity.front = self.cell(idx).velocity.back;
-        }
+impl Grid {
+    fn advect_velocity(&mut self, _log: &slog::Logger, dt: Scalar) {
+        self.cells
+            .par_iter_mut()
+            .for_each(|c| c.velocity.front = c.velocity.back);
 
         for idx in self.iter_index_inside() {
             if self.cell(idx).mode == CellTypes::Solid {
@@ -505,7 +516,7 @@ impl Integrate for Grid {
                         idx!(1, 1),
                         self.dim - idx!(1, 1),
                         pos,
-                        dir,
+                        Some(dir),
                         |cell: &Cell| cell.velocity.back[dir],
                     );
                 };
@@ -522,25 +533,57 @@ impl Integrate for Grid {
             }
         }
 
-        for idx in self.iter_index() {
-            self.cell_mut(idx).velocity.swap();
-        }
+        self.cells.par_iter_mut().for_each(|c| c.velocity.swap());
     }
-}
+    fn advect_smoke(&mut self, _log: &slog::Logger, dt: Scalar) {
+        self.cells
+            .par_iter_mut()
+            .for_each(|c| c.smoke.front = c.smoke.back);
 
-impl Grid {
+        for idx in self.iter_index_inside() {
+            if self.cell(idx).mode == CellTypes::Solid {
+                continue;
+            }
+
+            let nbs = Grid::get_neighbors_indices(idx);
+            let mut pos = (idx.cast::<Scalar>() + vec2!(0.5, 0.5)) * self.cell_width;
+
+            let mut vel = Vector2::zeros();
+            for dir in 0..2 {
+                vel += vec2!(
+                    self.cell(nbs[dir][0]).velocity.back.x,
+                    self.cell(nbs[dir][1]).velocity.back.y
+                ) * 0.5;
+            }
+
+            pos = pos - dt * vel;
+
+            self.cell_mut(idx).smoke.front = self.sample_field(
+                idx!(1, 1),
+                self.dim - idx!(1, 1),
+                pos,
+                None,
+                |cell: &Cell| cell.smoke.back,
+            );
+        }
+
+        self.cells.par_iter_mut().for_each(|c| c.smoke.swap());
+    }
+
     pub fn sample_field<F: Fn(&Cell) -> Scalar>(
         &self,
         min: Index2,
         max: Index2,
         mut pos: Vector2,
-        dir: usize,
+        dir: Option<usize>,
         get_val: F,
     ) -> Scalar {
         let h = self.cell_width;
         let h_inv = 1.0 / self.cell_width;
 
-        let offset = self.offsets[dir];
+        // If `dir` is set, we need some offset.
+        // For velocities as they are on a staggered grid.
+        let offset = dir.map_or(Vector2::zeros(), |d| self.offsets[d]);
         pos = pos - offset; // Compute position on staggered grid.
         pos = Grid::clamp_to_range(Vector2::zeros(), self.extent, pos);
 

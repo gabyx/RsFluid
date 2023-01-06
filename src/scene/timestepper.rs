@@ -50,8 +50,11 @@ impl<'a> TimeStepper<'a> {
     }
 
     pub fn compute_step(&mut self, dt: Scalar) {
-      info!(self.log, "Time at: '{:0.3}'.", self.t);
+        if dt <= 0.0 {
+            panic!("Timestep is invalid.")
+        }
 
+        info!(self.log, "Time at: '{:0.3}'.", self.t);
         self.reset();
         self.integrate(dt);
         self.solve_incompressibility(dt);
@@ -61,7 +64,7 @@ impl<'a> TimeStepper<'a> {
     }
 
     fn reset(&mut self) {
-       for obj in self.objects.iter_mut() {
+        for obj in self.objects.iter_mut() {
             obj.reset(self.log);
         }
     }

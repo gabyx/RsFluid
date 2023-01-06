@@ -1,10 +1,26 @@
 #[cfg(test)]
 mod tests {
 
+    use std::cell::RefCell;
+
     use crate::log::*;
-    use crate::solver::grid::*;
+    use crate::scene::grid::*;
     use crate::types::*;
     use float_cmp::approx_eq;
+
+    #[derive(Debug)]
+    enum List {
+        Cons(Rc<RefCell<i32>>, Rc<List>),
+        Nil,
+    }
+
+    use crate::List::{Cons, Nil};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn check_runtime_ownership() {
+    }
 
     #[test]
     fn check_clamp() {

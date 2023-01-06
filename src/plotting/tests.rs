@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
 
-    use crate::draw::plot::grid;
+    use crate::plotting::plot::grid;
     use crate::types::*;
 
     #[test]

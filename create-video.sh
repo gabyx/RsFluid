@@ -6,9 +6,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 frameRate="${1?'First argument: Framerate.'}"
 timestep=$(echo "scale=3; 1.0/$frameRate" | bc)
-frameRateVideo=$(echo "$frameRate*1.5" | bc)
+frameRateVideo="$frameRate"
 
-cargo run --release --bin rustofluid -- -e 120 -t "$timestep" --incompress-iters 40 --dim "400,200"
+cargo run --release --bin rustofluid -- -e 10.0 -t "$timestep" --incompress-iters 100 --dim "400,200"
 
 cd "$DIR" &&
     ffmpeg -y -framerate "$frameRateVideo" -pattern_type glob -i 'frames/frame-press-*.png' \
