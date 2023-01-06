@@ -17,8 +17,8 @@ The simulation is implemented with the same logic as as in
 The CLI simulator is in [src/main.rs](src/main.rs) which sets up the scene with
 a [grid](src/solver/grid.rs) and hands it over to the
 [timestepper](src/solver/timestepper.rs) which is responsible to integrate the
-grid. Disclaimer: This design is not yet perfect but it was more to playaround
-the different concepts in Rust.
+grid. Disclaimer: This design is not yet perfect but it was more to play around
+with the different concepts in Rust.
 
 You can start the simulation with
 
