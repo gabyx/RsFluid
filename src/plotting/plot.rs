@@ -16,16 +16,17 @@ pub fn grid<F: Fn(Index2) -> Option<Scalar>>(
 ) -> Result<(), Box<dyn Error>> {
     let ratio = dim.y as Scalar / dim.x as Scalar;
 
-    let size_px = dim!(size.x, (size.x as Scalar * ratio) as usize + 20);
+    let border_top = 25.0;
+    let size_px = dim!(size.x, (size.x as Scalar * ratio + border_top) as usize);
 
     let root = BitMapBackend::new(&file, (size_px.x as u32, size_px.y as u32)).into_drawing_area();
     root.fill(&WHITE)?;
-    root.titled(&text, ("sans-serif", 12))?;
+    root.titled(&text, ("sans-serif", 20))?;
 
     let cg: colorgrad::Gradient = colorgrad::turbo();
 
     let mut chart = ChartBuilder::on(&root)
-        .margin_top(20)
+        .margin_top(border_top)
         .x_label_area_size(0)
         .y_label_area_size(0)
         .build_cartesian_2d(0.0..(dim.x) as Scalar, 0.0..(dim.y) as Scalar)?;
@@ -34,7 +35,6 @@ pub fn grid<F: Fn(Index2) -> Option<Scalar>>(
         .configure_mesh()
         .disable_x_mesh()
         .disable_y_mesh()
-        .axis_desc_style(("sans-serif", 15))
         .draw()?;
 
     let plotting_area = chart.plotting_area();

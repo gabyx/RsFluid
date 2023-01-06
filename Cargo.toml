@@ -19,6 +19,7 @@ colorgrad = "0.6.2"
 itertools = "0.10.5"
 simple-error = "0.1.9"
 rayon = "1.6.1"
+indicatif = "0.17.2"
 
 [profile.release-bench]
 inherits = "release"

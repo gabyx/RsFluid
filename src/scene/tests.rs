@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn check_grid_sample() {
-        let log = create_logger();
+        let (log, switch) = create_logger();
         let mut grid = Grid::new(dim!(10, 10), 1.0);
 
         let sample_back_vel = |cell: &Cell| {

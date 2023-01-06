@@ -8,8 +8,11 @@ use std::error::Error;
 pub fn save_plots(
     log: &Logger,
     timestepper: &TimeStepper,
+    size: Index2,
     output: &str,
     step: u64,
+    with_pressure: bool,
+    with_velocity: bool,
 ) -> Result<(), Box<dyn Error>> {
     let grid = timestepper.objects[0]
         .as_any()
@@ -36,7 +39,7 @@ pub fn save_plots(
         if grid.cell(idx).mode == CellTypes::Solid {
             return None;
         }
-        return Some(0.7 * grid.cell(idx).smoke.back);
+        return Some(0.6 * grid.cell(idx).smoke.back);
     };
 
     let text = format!(
@@ -53,11 +56,15 @@ pub fn save_plots(
     info!(log, "Saving plots.");
 
     let mut file = output.replace("{}", &format!("vel-{:06}", step));
-    plotting::grid(dim!(1600, 800), grid.dim, vel_get, file, None, &text)?;
+    if with_velocity {
+        plotting::grid(size, grid.dim, vel_get, file, None, &text)?;
+    }
 
-    file = output.replace("{}", &format!("press-{:06}", step));
-    plotting::grid(dim!(1600, 800), grid.dim, press_get, file, None, &text)?;
+    if with_pressure {
+        file = output.replace("{}", &format!("press-{:06}", step));
+        plotting::grid(size, grid.dim, press_get, file, None, &text)?;
+    }
 
     file = output.replace("{}", &format!("smoke-{:06}", step));
-    return plotting::grid(dim!(1600, 800), grid.dim, smoke_get, file, None, &text);
+    return plotting::grid(size, grid.dim, smoke_get, file, None, &text);
 }

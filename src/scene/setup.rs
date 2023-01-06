@@ -46,6 +46,9 @@ pub struct CLIArgs {
     #[arg(long = "dim", default_value = "200, 100", value_parser = parse_vector::<usize, 2>)]
     pub dim: Index2,
 
+    #[arg(long = "plot-dim", default_value = "1600, 800", value_parser = parse_vector::<usize, 2>)]
+    pub plot_dim: Index2,
+
     #[arg(short = 'g', long = "gravity", default_value = "0.0, 9.81",  value_parser = parse_vector::<Scalar, 2>)]
     pub gravity: Vector2,
 
@@ -55,8 +58,14 @@ pub struct CLIArgs {
     #[arg(long = "scene-index", default_value_t = 0)]
     pub scene_idx: usize,
 
-    #[arg(long = "video", default_value_t = true)]
-    pub render_video: bool,
+    #[arg(long = "plot-pressure", default_value_t = false)]
+    pub plot_pressure: bool,
+
+    #[arg(long = "plot-velocity", default_value_t = false)]
+    pub plot_velocity: bool,
+
+    #[arg(long = "show-progress", default_value_t = false)]
+    pub show_progress: bool,
 }
 
 pub fn parse_args() -> CLIArgs {
