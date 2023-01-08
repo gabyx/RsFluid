@@ -9,8 +9,9 @@ details" as we phrase it in German. Its probably a fact in the field of
 scientific simulation that most boilerplate code is there to deal with the
 beautiful (😨) boundaries of your simulation domain, data structures etc.
 
-The simulation is implemented with the same logic as as in
-[fluid.sim](https://github.com/matthias-research/pages/blob/master/tenMinutePhysics/17-fluidSim.html).
+The simulation is implemented with the same procedure as as in
+[fluid.sim](https://github.com/matthias-research/pages/blob/master/tenMinutePhysics/17-fluidSim.html)
+with some additional data structures to support the computation.
 
 # Introduction
 
