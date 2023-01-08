@@ -2,28 +2,34 @@ use crate::types::*;
 use colorgrad;
 use itertools::Itertools;
 use plotters::prelude::*;
-use plotters::style::Color;
 
 use std::error::Error;
 
-pub fn grid<F: Fn(Index2) -> Option<Scalar>>(
+pub trait ColorFunction = Fn(Index2) -> colorgrad::Color;
+
+pub fn grid<F: ColorFunction>(
     size: Index2,
     dim: Index2,
-    get_data: F,
+    get_color: F,
     file: String,
-    color_undef: Option<&dyn Color>,
-    text: &str,
+    text: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
     let ratio = dim.y as Scalar / dim.x as Scalar;
 
-    let border_top = 25.0;
+    let border_top = if text.is_some() { 25.0 } else { 0.0 };
+
     let size_px = dim!(size.x, (size.x as Scalar * ratio + border_top) as usize);
 
     let root = BitMapBackend::new(&file, (size_px.x as u32, size_px.y as u32)).into_drawing_area();
-    root.fill(&WHITE)?;
-    root.titled(&text, ("sans-serif", 20))?;
+    root.fill(&BLACK)?;
 
-    let cg: colorgrad::Gradient = colorgrad::turbo();
+    let text_style = ("sans-serif", 20)
+        .with_color(WHITE)
+        .into_text_style(&root);
+
+    if let Some(text) = text {
+        root.titled(&text, &text_style)?;
+    }
 
     let mut chart = ChartBuilder::on(&root)
         .margin_top(border_top)
@@ -39,26 +45,25 @@ pub fn grid<F: Fn(Index2) -> Option<Scalar>>(
 
     let plotting_area = chart.plotting_area();
 
-    let mut some_color: RGBColor;
-    let none_color = color_undef.unwrap_or(&BLACK);
-    let mut color: &dyn Color;
+    let mut color: RGBAColor;
 
+    // Iterate over all cells and get color.
     for (i, j) in (0..dim.x).cartesian_product(0..dim.y) {
-        match get_data(idx!(i, j)) {
-            Some(v) => {
-                let c = cg.at(v.clamp(0.0, 1.0)).to_rgba8();
-                some_color = RGBColor(c[0], c[1], c[2]);
-                color = &some_color;
-            }
-            None => color = none_color,
-        };
+        let c = get_color(idx!(i, j));
+
+        color = RGBAColor(
+            (c.r * 256.0) as u8,
+            (c.g * 256.0) as u8,
+            (c.b * 256.0) as u8,
+            c.a,
+        );
 
         let x = i as Scalar;
         let y = j as Scalar;
 
         plotting_area.draw(&Rectangle::new(
             [(x, y), (x + 1.0, y + 1.0)],
-            ShapeStyle::from(color.to_rgba()).filled(),
+            ShapeStyle::from(color).filled(),
         ))?;
     }
 

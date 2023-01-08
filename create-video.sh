@@ -14,15 +14,19 @@ cargo run --release --bin rustofluid -- \
     --show-progress \
     --incompress-iters 150 \
     --dim "1920, 640" \
-    --plot-dim "1920, 640"
+    --plot-dim "1920, 640" \
+    --plot-velocity \
+    --plot-pressure \
+    --plot-masked-pressure \
+    --plot-masked-velocity
 
-# cd "$DIR" &&
-#     ffmpeg -y -framerate "$frameRateVideo" -pattern_type glob -i 'frames/frame-press-*.png' \
-#         -c:v libx264 -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -pix_fmt yuv420p video-press.mp4
+cd "$DIR" &&
+    ffmpeg -y -framerate "$frameRateVideo" -pattern_type glob -i 'frames/frame-press-*.png' \
+        -c:v libx264 -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -pix_fmt yuv420p video-press.mp4
 
-# cd "$DIR" &&
-#     ffmpeg -y -framerate "$frameRateVideo" -pattern_type glob -i 'frames/frame-vel-*.png' \
-#         -c:v libx264 -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -pix_fmt yuv420p video-vel.mp4
+cd "$DIR" &&
+    ffmpeg -y -framerate "$frameRateVideo" -pattern_type glob -i 'frames/frame-vel-*.png' \
+        -c:v libx264 -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" -pix_fmt yuv420p video-vel.mp4
 
 cd "$DIR" &&
     ffmpeg -y -framerate "$frameRateVideo" -pattern_type glob -i 'frames/frame-smoke-*.png' \

@@ -35,6 +35,16 @@ To create the video with `30` frames use:
 ./create-video.sh 30
 ```
 
-# Video
+# Videos
 
-[![Liquid in Fluid](docs/frame-example.png)](https://youtu.be/jhgwYL9K-pI)
+## Video Velocity
+
+[![Liquid in Fluid: Velocity](docs/frame-1.png)](https://youtu.be/qZvKNIiBiw4)
+
+## Video Liquid
+
+[![Liquid in Fluid](docs/frame-3.png)](https://youtu.be/BxRfxUcNPv0)
+
+## Video Pressure
+
+[![Liquid in Fluid: Pressure](docs/frame-2.png)](https://youtu.be/44bBZcQKzLQ)

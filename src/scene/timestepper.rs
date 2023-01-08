@@ -17,6 +17,10 @@ pub trait Integrate {
     fn advect(&mut self, _log: &Logger, _dt: Scalar) {}
 
     // For downcasting.
+    // This can be solved differently and nicer.
+    // The timestepper should no own the objects.
+    // This however requires shared pointers and `RefCell`, e.g.
+    // another design.
     fn as_any(&self) -> &dyn Any;
 
     // For downcasting.

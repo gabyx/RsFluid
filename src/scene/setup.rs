@@ -64,6 +64,15 @@ pub struct CLIArgs {
     #[arg(long = "plot-velocity", default_value_t = false)]
     pub plot_velocity: bool,
 
+    #[arg(long = "plot-masked-pressure", default_value_t = false)]
+    pub plot_masked_pressure: bool,
+
+    #[arg(long = "plot-masked-velocity", default_value_t = false)]
+    pub plot_masked_velocity: bool,
+
+    #[arg(long = "plot-stats", default_value_t = false)]
+    pub plot_stats: bool,
+
     #[arg(long = "show-progress", default_value_t = false)]
     pub show_progress: bool,
 }
@@ -103,7 +112,6 @@ impl Manipulator for AddSmokeBar {
         (y_range[0]..y_range[1]).for_each(|y| {
             let idx = idx!(0, y);
             if let Some(cell) = grid.cell_mut_opt(idx) {
-                debug!(log, "index {}", idx);
                 cell.smoke.back = 1.0;
             }
         });

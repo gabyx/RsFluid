@@ -1,5 +1,6 @@
 {
     "cSpell.words": [
+        "colorgrad",
         "curr",
         "diveregence",
         "downcasting",
@@ -8,6 +9,7 @@
         "incompress",
         "manips",
         "Overrelaxation",
+        "progressbar",
         "Timestep",
         "timestepper",
         "ulps"
