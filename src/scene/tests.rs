@@ -1,26 +1,11 @@
 #[cfg(test)]
 mod tests {
 
-    use std::cell::RefCell;
-
     use crate::log::*;
     use crate::scene::grid::*;
     use crate::types::*;
     use float_cmp::approx_eq;
 
-    #[derive(Debug)]
-    enum List {
-        Cons(Rc<RefCell<i32>>, Rc<List>),
-        Nil,
-    }
-
-    use crate::List::{Cons, Nil};
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
-    #[test]
-    fn check_runtime_ownership() {
-    }
 
     #[test]
     fn check_clamp() {
@@ -44,7 +29,7 @@ mod tests {
 
     #[test]
     fn check_grid_sample() {
-        let (log, switch) = create_logger();
+        let (log, _) = create_logger();
         let mut grid = Grid::new(dim!(10, 10), 1.0);
 
         let sample_back_vel = |cell: &Cell| {
@@ -68,13 +53,13 @@ mod tests {
         let max = grid.dim;
 
         let eps = Scalar::EPSILON;
-        let val = grid.sample_field(min, max, vec2!(1.0, 1.0 - eps), 1, sample_back_vel);
+        let val = grid.sample_field(min, max, vec2!(1.0, 1.0 - eps), Some(1), sample_back_vel);
         assert!(approx_eq!(Scalar, val, 3.5, ulps = 10), "Val: {}", val);
 
-        let val = grid.sample_field(min, max, vec2!(1.5 - eps, 1.0 - eps), 1, sample_back_vel);
+        let val = grid.sample_field(min, max, vec2!(1.5 - eps, 1.0 - eps), Some(1), sample_back_vel);
         assert!(approx_eq!(Scalar, val, 4.0, ulps = 10), "Val: {}", val);
 
-        let val = grid.sample_field(min, max, vec2!(1.0, 0.5), 1, sample_back_vel);
+        let val = grid.sample_field(min, max, vec2!(1.0, 0.5), Some(1), sample_back_vel);
         assert!(approx_eq!(Scalar, val, 2.5, ulps = 10), "Val: {}", val);
 
         // Out of defined values field.
@@ -82,7 +67,7 @@ mod tests {
             min,
             max,
             vec2!(2.5 - 2.0 * eps, 1.0 - eps),
-            1,
+            Some(1),
             sample_back_vel,
         );
         assert!(approx_eq!(Scalar, val, 0.0, epsilon = 1e-6), "Val: {}", val);

@@ -109,6 +109,7 @@ impl Manipulator for AddSmokeBar {
             self.center.y - (self.height / 2),
             self.center.y + (self.height / 2),
         ];
+
         (y_range[0]..y_range[1]).for_each(|y| {
             let idx = idx!(0, y);
             if let Some(cell) = grid.cell_mut_opt(idx) {
