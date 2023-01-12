@@ -6,7 +6,6 @@ mod tests {
     use crate::types::*;
     use float_cmp::approx_eq;
 
-
     #[test]
     fn check_clamp() {
         let e = Index2::new(3, 8);
@@ -56,7 +55,13 @@ mod tests {
         let val = grid.sample_field(min, max, vec2!(1.0, 1.0 - eps), Some(1), sample_back_vel);
         assert!(approx_eq!(Scalar, val, 3.5, ulps = 10), "Val: {}", val);
 
-        let val = grid.sample_field(min, max, vec2!(1.5 - eps, 1.0 - eps), Some(1), sample_back_vel);
+        let val = grid.sample_field(
+            min,
+            max,
+            vec2!(1.5 - eps, 1.0 - eps),
+            Some(1),
+            sample_back_vel,
+        );
         assert!(approx_eq!(Scalar, val, 4.0, ulps = 10), "Val: {}", val);
 
         let val = grid.sample_field(min, max, vec2!(1.0, 0.5), Some(1), sample_back_vel);
@@ -71,5 +76,57 @@ mod tests {
             sample_back_vel,
         );
         assert!(approx_eq!(Scalar, val, 0.0, epsilon = 1e-6), "Val: {}", val);
+    }
+
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+
+    #[derive(Clone, Debug)]
+    struct C {
+        i: i64,
+    }
+    type LockedCell = Mutex<C>;
+
+    #[derive(Clone, Debug)]
+    struct G {
+        cells: Vec<Arc<LockedCell>>,
+    }
+
+    impl G {
+        // pub fn get_cells<const N: usize>(&mut self, indices: [usize; N]) -> [&mut C; N] {
+        //     return self.cells.get_many_mut(indices).expect("Wrong indices.");
+        // }
+        pub fn cell(&mut self, i: usize) -> Arc<LockedCell> {
+            return self.cells[i].clone();
+        }
+    }
+
+    #[test]
+    fn check_grid_parallelism() {
+        let (log, _) = create_logger();
+
+        let grid = G {
+            cells: vec![
+                Arc::new(Mutex::new(C { i: 3 })),
+                Arc::new(Mutex::new(C { i: 5 })),
+            ],
+        };
+
+        let mut handles = vec![];
+        for i in 0..2 {
+            let cell = grid.cells[i].clone();
+
+            let handle = thread::spawn(move || {
+                cell.lock().unwrap().i += 1;
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        info!(log, "{:?}", grid)
     }
 }
