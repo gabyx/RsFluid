@@ -13,7 +13,7 @@ function cleanup() {
 
 trap cleanup EXIT
 
-scripts="$DIR/benchmark"
+scripts="$DIR/profile"
 
 cd "$DIR"
 cargo build --profile release-bench --bin rustofluid
