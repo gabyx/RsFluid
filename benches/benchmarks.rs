@@ -1,61 +1,151 @@
-use std::time::Duration;
-
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, PlotConfiguration, AxisScale};
+use criterion::{
+    criterion_group, criterion_main, AxisScale, BenchmarkId, Criterion, PlotConfiguration,
+};
+use itertools::Itertools;
 use rayon::prelude::*;
+use std::{marker::PhantomData, time::Duration};
 
-#[derive(Clone, Debug)]
-struct C {
-    i: usize,
+type Index2 = nalgebra::Vector2<usize>;
+
+#[macro_export]
+macro_rules! idx {
+    ($x:expr, $($y:expr),+ ) => {
+        Index2::new($x, $($y),+)
+    };
 }
 
 #[derive(Clone, Debug)]
-struct G {
-    cells: Vec<C>,
+pub struct C {
+    pub i: usize,
+    pub index: Index2,
 }
 
-fn run_grid_single(n: usize, grid: &mut G) {
-    let l = grid.cells.len() - 1;
+#[derive(Clone, Debug)]
+pub struct G {
+    pub cells: Vec<C>,
+    pub dim: Index2,
+}
 
-    for _ in 0..n {
-        for i in 0..grid.cells.len() {
-            grid.cells[i].i += i + grid.cells[(i + 1).min(l)].i
-        }
+pub trait GetIndex {
+    fn index(&self) -> Index2;
+}
+
+impl GetIndex for C {
+    fn index(&self) -> Index2 {
+        return self.index;
     }
 }
 
-fn run_grid_parallel(n: usize, grid: &mut G) {
-    let mut black: Vec<&mut C> = vec![];
-    let mut white: Vec<&mut C> = vec![];
+pub struct PosStencilMut<'a, T: 'a>
+where
+    T: GetIndex,
+{
+    cells: *mut T,
+    dim: Index2,
+    phantom: PhantomData<&'a mut T>,
+}
 
-    grid.cells.iter_mut().enumerate().for_each(|(i, c)| {
-        if i % 2 == 0 {
-            black.push(c);
-        } else {
-            white.push(c)
+impl<'a, T: GetIndex> PosStencilMut<'a, T> {
+    fn cell(&self) -> &T {
+        return unsafe { &*self.cells };
+    }
+
+    fn cell_mut(&mut self) -> &mut T {
+        return unsafe { &mut *self.cells };
+    }
+
+    fn neighbor(&mut self, dir: usize) -> Option<&mut T> {
+        assert!(dir <= 1 && self.dim.x >= 1 && self.dim.y >= 1);
+
+        if self.cell().index()[dir] >= self.dim[dir] - 1 {
+            return None;
         }
-    });
+        let offset = if dir == 0 { 1 } else { self.dim[0] };
+        return Some(unsafe { &mut *self.cells.add(offset) });
+    }
+}
+
+pub fn pos_stencils_mut<T: GetIndex>(
+    data: &mut Vec<T>,
+    dim: Index2,
+    min: Option<Index2>,
+    max: Option<Index2>,
+) -> impl Iterator<Item = PosStencilMut<'_, T>> {
+    assert!(dim > idx!(0, 0));
+
+    let min = min.unwrap_or(Index2::zeros());
+    let max = max.unwrap_or(dim - idx!(1, 1));
+
+    assert!(min >= Index2::zeros() && max < dim);
+
+    return (min[0]..max[0])
+        .step_by(2)
+        .cartesian_product((min[1]..max[1]).step_by(2))
+        .map(move |(i, j)| PosStencilMut {
+            cells: &mut data[i + j * dim[0]],
+            dim,
+            phantom: PhantomData,
+        });
+}
+
+// Safety: `PosStencilMut` can only be created by `pos_stencils_mut`
+// which guarantees non-aliased mutable references.
+// Therefore it can safely be transferred to another thread.
+unsafe impl<'a, T: GetIndex> Send for PosStencilMut<'a, T> {}
+
+// For PosStencilMut to be Sync we have to enforce that you can't write to something stored
+// in a &PosStencilMut while that same something could be read or written to from another &PosStencilMut.
+// Since you need an &mut PosStencilMut to write to the pointer, and the borrow checker enforces that
+// mutable references must be exclusive, there are no soundness issues making PosStencilMut sync either.
+unsafe impl<'a, T: GetIndex> Sync for PosStencilMut<'a, T> {}
+
+fn run_grid_parallel(n: usize, grid: &mut G) {
+    let mut stencils: Vec<_> = pos_stencils_mut(&mut grid.cells, grid.dim, None, None).collect();
 
     for _ in 0..n {
-        let mut l = white.len() - 1;
-        black
-            .par_iter_mut()
-            .enumerate()
-            .for_each(|(i, c)| c.i += i + white[i.min(l)].i);
+        stencils.par_iter_mut().for_each(|stencil| {
+            stencil.cell_mut().i += match stencil.neighbor(0) {
+                Some(c) => c.i,
+                None => 0,
+            } + match stencil.neighbor(1) {
+                Some(c) => c.i,
+                None => 0,
+            }
+        })
+    }
+}
 
-        l = black.len() - 1;
-        white.par_iter_mut().enumerate().for_each(|(i, c)| {
-            c.i += i + black[i.min(l)].i;
-        });
+fn run_grid_single(n: usize, grid: &mut G) {
+    let mut stencils: Vec<_> = pos_stencils_mut(&mut grid.cells, grid.dim, None, None).collect();
+
+    for _ in 0..n {
+        stencils.iter_mut().for_each(|stencil| {
+            stencil.cell_mut().i += match stencil.neighbor(0) {
+                Some(c) => c.i,
+                None => 0,
+            } + match stencil.neighbor(1) {
+                Some(c) => c.i,
+                None => 0,
+            }
+        })
     }
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
+    let dim = idx!(100, 100);
+
+    let cell_generator = (0..dim[0]).cartesian_product(0..dim[1]).map(|(i, j)| C {
+        i: i + j,
+        index: idx!(i, j),
+    });
+
     let mut grid = G {
-        cells: vec![C { i: 3 }; 100 * 100],
+        cells: Vec::from_iter(cell_generator),
+        dim,
     };
 
     let mut group = c.benchmark_group("Grid Single vs. Parallel");
-    for i in [10, 40, 100, 1000].iter() {
+    for i in [10, 40, 100, 500, 1000].iter() {
         group.bench_with_input(BenchmarkId::new("Single", i), i, |b, i| {
             b.iter(|| run_grid_parallel(*i, &mut grid))
         });
@@ -65,7 +155,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     }
 
-    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Linear);
+    let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
     group.plot_config(plot_config);
 
     group.measurement_time(Duration::from_secs(20));
