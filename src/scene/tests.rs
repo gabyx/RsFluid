@@ -5,7 +5,6 @@ mod tests {
     use crate::scene::grid::*;
     use crate::types::*;
     use float_cmp::approx_eq;
-    use rayon::prelude::*;
 
     #[test]
     fn check_clamp() {

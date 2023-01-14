@@ -309,19 +309,19 @@ pub trait CellGetter<'a, I> {
 impl<'t> CellGetter<'t, Index2> for Grid {
     type Item = Cell;
 
-    fn cell(&'t self, index: Index2) -> &Cell {
+    fn cell(&self, index: Index2) -> &Cell {
         return &self.cells[index.x + index.y * self.dim.x];
     }
 
-    fn cell_mut(&'t mut self, index: Index2) -> &mut Cell {
+    fn cell_mut(&mut self, index: Index2) -> &mut Cell {
         return &mut self.cells[index.x + index.y * self.dim.x];
     }
 
-    fn cell_opt(&'t self, index: Index2) -> Option<&Cell> {
+    fn cell_opt(&self, index: Index2) -> Option<&Cell> {
         return Grid::is_inside_range(Index2::zeros(), self.dim, index).then(|| self.cell(index));
     }
 
-    fn cell_mut_opt(&'t mut self, index: Index2) -> Option<&mut Cell> {
+    fn cell_mut_opt(&mut self, index: Index2) -> Option<&mut Cell> {
         return Grid::is_inside_range(Index2::zeros(), self.dim, index)
             .then(|| self.cell_mut(index));
     }
