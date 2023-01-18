@@ -3,7 +3,7 @@ use criterion::{
 };
 use itertools::Itertools;
 use rayon::prelude::*;
-use std::{ops::Index, time::Duration};
+use std::time::Duration;
 type Index2 = nalgebra::Vector2<usize>;
 
 #[macro_export]
@@ -23,16 +23,6 @@ pub struct C {
 pub struct G {
     pub cells: Vec<C>,
     pub dim: Index2,
-}
-
-pub trait GetIndex {
-    fn index(&self) -> Index2;
-}
-
-impl GetIndex for C {
-    fn index(&self) -> Index2 {
-        return self.index;
-    }
 }
 
 pub struct PosStencilMut<'a, T> {
@@ -151,11 +141,6 @@ fn stencil_compute(stencil: &mut PosStencilMut<'_, C>) {
 }
 
 fn run_grid_parallel(n: usize, grid: &mut G) {
-    // let mut stencils: Vec<_> = grid
-    //     .cells
-    //     .positive_stencils_mut(grid.dim, None, None)
-    //     .collect();
-
     let mut stencils: Vec<_> =
         positive_stencils_mut(grid.cells.as_mut_slice(), grid.dim, None, None).collect();
 
@@ -180,7 +165,14 @@ fn run_grid_single(n: usize, grid: &mut G) {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let dim = idx!(100, 100);
+    let mut dim = idx!(100, 100);
+
+    let mut dim2 = idx!(100, 100);
+
+    let i = 4;
+    let a =  &dim;
+    let b: &mut Index2 = &mut (*a);
+    b.x =3 ;
 
     let cell_generator = (0..dim[0]).cartesian_product(0..dim[1]).map(|(i, j)| C {
         i: i + j,

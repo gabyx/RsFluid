@@ -1,32 +1,9 @@
 use crate::types::*;
-use itertools::Itertools;
+use rayon::prelude::*;
 
 pub struct PosStencilMut<'a, T> {
-    cell: &'a mut T,
-    neighbors: [Option<&'a mut T>; 2],
-}
-
-impl<'a, T> PosStencilMut<'a, T> {
-    #[inline(always)]
-    fn get_neighbors<'cell>(cell: *mut T, dim: Index2, index: Index2) -> [Option<&'cell mut T>; 2] {
-        assert!(dim.x >= 1 && dim.y >= 1);
-
-        let mut nbs = [None, None];
-
-        for dir in 0..2 {
-            if index[dir] >= dim[dir] - 1 {
-                // No neighbor possible.
-                continue;
-            }
-
-            // For x-direction : offset = 1, for y-direction: offset = dim[0],
-            // general: for n-direction: offset = dim[0]*dim[1]*...*dim[n-1]
-            let offset = dim.iter().take(dir).fold(1, std::ops::Mul::mul);
-            nbs[dir] = Some(unsafe { &mut *cell.add(offset) });
-        }
-
-        return nbs;
-    }
+    pub cell: &'a mut T,
+    pub neighbors: [&'a mut T; 2],
 }
 
 pub trait PosStencil<'a, T: 'a> {
@@ -35,6 +12,7 @@ pub trait PosStencil<'a, T: 'a> {
         dim: Index2,
         min: Option<Index2>,
         max: Option<Index2>,
+        offset: Option<Index2>,
     ) -> Box<dyn Iterator<Item = PosStencilMut<'a, T>> + '_>;
 }
 
@@ -44,8 +22,15 @@ impl<'a, T: 'a> PosStencil<'a, T> for Vec<T> {
         dim: Index2,
         min: Option<Index2>,
         max: Option<Index2>,
+        offset: Option<Index2>,
     ) -> Box<dyn Iterator<Item = PosStencilMut<'a, T>> + '_> {
-        return Box::new(positive_stencils_mut(self.as_mut_slice(), dim, min, max));
+        return Box::new(positive_stencils_mut(
+            self.as_mut_slice(),
+            dim,
+            min,
+            max,
+            offset,
+        ));
     }
 }
 
@@ -55,62 +40,145 @@ pub fn positive_stencils_mut<T>(
     dim: Index2,
     min: Option<Index2>,
     max: Option<Index2>,
+    offset: Option<Index2>, // Stencil offset added to min/max.
 ) -> impl Iterator<Item = PosStencilMut<'_, T>> {
     assert!(
         dim > idx!(0, 0) && dim.iter().fold(1, std::ops::Mul::mul) == data.len(),
         "Wrong dimensions."
     );
 
-    let min = min.unwrap_or(Index2::zeros());
-    let max = max.unwrap_or(dim - idx!(1, 1));
+    let mut min = min.unwrap_or(Index2::zeros());
+    let mut max = max.unwrap_or(dim - idx!(1, 1));
+
+    let offset = offset.unwrap_or(Index2::zeros());
+    // Shift all stencils by this offset.
+    min += offset;
+    max += offset;
 
     assert!(min >= Index2::zeros() && max < dim);
 
-    return (min[0]..max[0])
-        .step_by(2)
-        .cartesian_product((min[1]..max[1]).step_by(2))
-        .map(move |(i, j)| {
-            let index = idx!(i, j);
+    let start_y = 0 + min.y * dim.x;
 
-            // Here the unsafe part happens.
-            let cell: *mut T = &mut data[index[0] + index[1] * dim[0]];
+    let it = data[start_y..]
+        .chunks_exact_mut(2 * dim.x)
+        .flat_map(move |row| {
+            let (top, bot) = row.split_at_mut(dim.x);
+            let y0 = top[min.x..].chunks_exact_mut(2);
+            let y1 = bot[min.x..].chunks_exact_mut(2);
 
-            // Get two non-aliasing mutable references for the neighbors.
-            return PosStencilMut {
-                cell: unsafe { &mut *cell },
-                neighbors: PosStencilMut::get_neighbors::<'_>(cell, dim, index),
-            };
+            y0.zip(y1).map(|ys| match ys {
+                ([ref mut x0_y0, ref mut x1_y0], [ref mut x0_y1, _]) => PosStencilMut {
+                    cell: x0_y0,
+                    neighbors: [x1_y0, x0_y1],
+                },
+                _ => unreachable!(),
+            })
         });
+
+    return it;
 }
 
 #[test]
 fn test() {
     // Grid:
-    // 3 4
-    // 1 2
+    // 4 5 6
+    // 1 2 3
     // -> x
-    let mut v = Matrix2T::<usize>::new(1, 3, 2, 4);
-    {
-        let mut it = positive_stencils_mut(v.as_mut_slice(), idx!(2, 2), None, None);
-        let mut s = it.next().unwrap();
-
-        // drop(v); // This should invalidate the life-time of `s` but it does not???
+    let mut v = nalgebra::Matrix3x2::<usize>::new(1, 4, 2, 5, 3, 6);
+    for s in positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None) {
         *s.cell += 3;
-        if let Some(n) = s.neighbors[0].as_deref_mut() {
-            *n += 3;
-        };
-        if let Some(n) = s.neighbors[1].as_deref_mut() {
-            *n += 3;
-        };
+
+        *s.neighbors[0] += 3;
+        *s.neighbors[1] += 3;
     }
 
     assert!(v[(0, 0)] == 4);
     assert!(v[(1, 0)] == 5);
-    assert!(v[(0, 1)] == 6);
+    assert!(v[(0, 1)] == 7);
+    assert!(v[(1, 1)] == 5);
 
-    {
-        let mut it = positive_stencils_mut(v.as_mut_slice(), idx!(2, 2), None, None);
-        it.next();
-        assert!(it.next().is_none());
+    assert!(v[(2, 0)] == 3);
+    assert!(v[(2, 1)] == 6);
+
+    print!("{:?}", v.as_slice());
+}
+
+#[test]
+fn test_parallel() {
+    // Grid:
+    // 4 5 6
+    // 1 2 3
+    // -> x
+    let mut v = nalgebra::Matrix3x2::<usize>::new(1, 4, 2, 5, 3, 6);
+    let mut stencils: Vec<_> =
+        positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None).collect();
+    stencils.par_iter_mut().for_each(|s| {
+        *s.cell += 3;
+        *s.neighbors[0] += 3;
+        *s.neighbors[1] += 3;
+    });
+
+    assert!(v[(0, 0)] == 4);
+    assert!(v[(1, 0)] == 5);
+    assert!(v[(0, 1)] == 7);
+    assert!(v[(1, 1)] == 5);
+
+    assert!(v[(2, 0)] == 3);
+    assert!(v[(2, 1)] == 6);
+
+    positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None).par_iter()
+}
+
+#[test]
+fn test_without_shift() {
+    // Grid:
+    // 5 6 7 8
+    // 1 2 3 4
+    // -> x
+    let mut v = nalgebra::Matrix4x2::<usize>::new(1, 5, 2, 6, 3, 7, 4, 8);
+    for s in positive_stencils_mut(v.as_mut_slice(), idx!(4, 2), None, None, None) {
+        *s.cell += 3;
+
+        *s.neighbors[0] += 3;
+        *s.neighbors[1] += 3;
     }
+
+    assert!(v[(0, 0)] == 4);
+    assert!(v[(1, 0)] == 5);
+    assert!(v[(0, 1)] == 8);
+    assert!(v[(1, 1)] == 6);
+
+    assert!(v[(2, 0)] == 6);
+    assert!(v[(3, 0)] == 7);
+    assert!(v[(2, 1)] == 10);
+    assert!(v[(3, 1)] == 8);
+
+    print!("{:?}", v.as_slice());
+}
+
+#[test]
+fn test_with_shift() {
+    // Grid:
+    // 0 5 6 7 8
+    // 0 1 2 3 4
+    // -> x
+    let mut v = nalgebra::Matrix5x2::<usize>::new(0, 0, 1, 5, 2, 6, 3, 7, 4, 8);
+    for s in positive_stencils_mut(v.as_mut_slice(), idx!(5, 2), Some(idx!(1, 0)), None, None) {
+        *s.cell += 3;
+
+        *s.neighbors[0] += 3;
+        *s.neighbors[1] += 3;
+    }
+
+    assert!(v[(1, 0)] == 4);
+    assert!(v[(2, 0)] == 5);
+    assert!(v[(1, 1)] == 8);
+    assert!(v[(2, 1)] == 6);
+
+    assert!(v[(3, 0)] == 6);
+    assert!(v[(4, 0)] == 7);
+    assert!(v[(3, 1)] == 10);
+    assert!(v[(4, 1)] == 8);
+
+    print!("{:?}", v.as_slice());
 }

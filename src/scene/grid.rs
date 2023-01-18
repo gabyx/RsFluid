@@ -1,6 +1,8 @@
 use crate::log::{debug, info, warn, Logger};
+use crate::scene::grid_stencil::*;
 use crate::scene::timestepper::Integrate;
 use crate::types::*;
+
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::any::Any;
@@ -14,18 +16,30 @@ pub enum CellTypes {
 
 #[derive(Clone, Debug)]
 pub struct Cell {
+    index: Index2,
+    pub mode: CellTypes,
+
     // Velocity x,y:
     // - v_x is at the location (h/2, 0),
     // - v_y is at the location (0, h/2),
     pub velocity: FrontBackBuffer<Vector2>,
-
     pub pressure: Scalar,
     pub smoke: FrontBackBuffer<Scalar>,
     pub div: Scalar,
 
-    pub mode: CellTypes,
+    // Fields for parallel computation (only).
+    // ================================
+    pub div_normed: Scalar,
 
-    index: Index2,
+    // Div splitting factor:
+    // For fluid cells: 1.0 / (Sum(fluid neighbors)) =
+    //                  1.0 / s_nbs.sum()
+    pub s: Scalar,
+
+    // Flag denoting if neighbor is a fluid cell:
+    // [neg-direction, pos-direction]
+    pub s_nbs: [Index2T<u8>; 2],
+    // ================================
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +63,8 @@ impl Cell {
                 back: default_vel,
             },
             div: 0.0,
+            div_normed: 0.0,
+            s: 0.0,
             pressure: default_pressure,
             smoke: FrontBackBuffer {
                 front: default_smoke,
@@ -419,10 +435,76 @@ impl Integrate for Grid {
         iterations: u64,
         density: Scalar,
     ) {
+        self.solve_incompressibility_sequential(log, dt, iterations, density);
+    }
+
+    fn advect(&mut self, log: &slog::Logger, dt: Scalar) {
+        self.advect_velocity(log, dt);
+        self.advect_smoke(log, dt);
+    }
+}
+
+impl Grid {
+    fn solve_incompressibility_parallel(
+        &mut self,
+        log: &Logger,
+        dt: Scalar,
+        iterations: u64,
+        density: Scalar,
+    ) {
+        assert!(
+            (self.dim.x - 1) % 2 == 0 && (self.dim.y - 1) % 2 == 0,
+            "Internal grid dimensions (dim = {} - 1) must be divisible
+             by 2 in each direction.",
+            self.dim
+        );
+
         // Set pressure field to zero.
-        for idx in self.iter_index() {
-            self.cell_mut(idx).pressure = 0.0;
+        self.cells.par_iter_mut().for_each(|c| c.pressure = 0.0);
+
+        let r = 1.9; // Overrelaxation factor.
+        let cp = density * self.cell_width / dt;
+
+        let offsets = [idx!(0, 0), idx!(1, 0), idx!(0, 1), idx!(1, 1)];
+        let mut stencils = Vec::with_capacity(self.cells.len());
+
+        let s_factor = |stencil: &mut Cell| {
+            return if cell.mode == CellTypes::Solid {
+                0
+            } else {
+                1
+            };
+        };
+
+        for (_iter, offset) in (0..iterations).cartesian_product(offsets.iter()) {
+            stencils = positive_stencils_mut(
+                self.cells.as_mut_slice(),
+                self.dim,
+                Some(idx!(1, 1)),
+                Some(self.dim - idx!(1, 1)),
+                Some(*offset),
+            )
+            .collect();
+
+            stencils.par_iter_mut().for_each(|s| {
+                s.cell.s_nbs[1][0] = s_factor(s.neighbors[0]);
+                s.neighbors[0].s_nbs[0][0] = s_factor(s.cell);
+
+                s.cell.s_nbs[1][1] = s_factor(s.neighbors[1]);
+                s.neighbors[1].s_nbs[0][1] = s_factor(s.cell);
+            });
         }
+    }
+
+    fn solve_incompressibility_sequential(
+        &mut self,
+        log: &Logger,
+        dt: Scalar,
+        iterations: u64,
+        density: Scalar,
+    ) {
+        // Set pressure field to zero.
+        self.cells.par_iter_mut().for_each(|c| c.pressure = 0.0);
 
         let r = 1.9; // Overrelaxation factor.
         let cp = density * self.cell_width / dt;
@@ -477,12 +559,15 @@ impl Integrate for Grid {
                 self.cell_mut(idx).pressure -= cp * div_normed;
 
                 // Add outflow-part to inflows to reach net 0-outflow.
+                // Solid cells have nbs_s[0] == 0.
                 self.cell_mut(idx).velocity.back += r * nbs_s[0] * div_normed;
 
                 // Subtract outflow-part to outflows to iteratively reach net 0-outflow (div(v) == 0).
+                // Solid cells have nbs_s[0] == 0.
                 self.cell_mut(nbs[pos_idx][0]).velocity.back.x -=
                     r * (nbs_s[pos_idx].x) * div_normed;
 
+                // Solid cells have nbs_s[0] == 0.
                 self.cell_mut(nbs[pos_idx][1]).velocity.back.y -= r * nbs_s[pos_idx].y * div_normed;
             }
         }
@@ -490,13 +575,6 @@ impl Integrate for Grid {
         self.compute_stats(&log);
     }
 
-    fn advect(&mut self, log: &slog::Logger, dt: Scalar) {
-        self.advect_velocity(log, dt);
-        self.advect_smoke(log, dt);
-    }
-}
-
-impl Grid {
     fn advect_velocity(&mut self, log: &slog::Logger, dt: Scalar) {
         debug!(log, "Advect velocity.");
 

@@ -12,6 +12,7 @@ pub type Matrix1x2T<T> = nalgebra::Matrix1x2<T>;
 pub type Matrix2x1T<T> = nalgebra::Matrix2x1<T>;
 
 pub type Index2 = nalgebra::Vector2<usize>;
+pub type Index2T<T> = nalgebra::Vector2<T>;
 
 #[macro_export]
 macro_rules! vec2 {
