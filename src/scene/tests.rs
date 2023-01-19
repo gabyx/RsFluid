@@ -3,6 +3,7 @@ mod tests {
 
     use crate::log::*;
     use crate::scene::grid::*;
+    use crate::scene::cell::*;
     use crate::types::*;
     use float_cmp::approx_eq;
 

@@ -1,5 +1,4 @@
 use crate::types::*;
-use rayon::prelude::*;
 
 pub struct PosStencilMut<'a, T> {
     /// The current cell.
@@ -9,24 +8,24 @@ pub struct PosStencilMut<'a, T> {
     pub neighbors: [&'a mut T; 2],
 }
 
-pub trait PosStencil<'a, T: 'a> {
+pub trait PosStencil<T> {
     fn positive_stencils_mut(
-        &'a mut self,
+        &mut self,
         dim: Index2,
         min: Option<Index2>,
         max: Option<Index2>,
         offset: Option<Index2>,
-    ) -> Box<dyn Iterator<Item = PosStencilMut<'a, T>> + '_>;
+    ) -> Box<dyn Iterator<Item = PosStencilMut<T>> + '_>;
 }
 
-impl<'a, T: 'a> PosStencil<'a, T> for Vec<T> {
+impl<T> PosStencil<T> for Vec<T> {
     fn positive_stencils_mut(
-        &'a mut self,
+        &mut self,
         dim: Index2,
         min: Option<Index2>,
         max: Option<Index2>,
         offset: Option<Index2>,
-    ) -> Box<dyn Iterator<Item = PosStencilMut<'a, T>> + '_> {
+    ) -> Box<dyn Iterator<Item = PosStencilMut<T>> + '_> {
         return Box::new(positive_stencils_mut(
             self.as_mut_slice(),
             dim,
@@ -44,7 +43,7 @@ pub fn positive_stencils_mut<T>(
     min: Option<Index2>,
     max: Option<Index2>,
     offset: Option<Index2>, // Stencil offset added to min/max.
-) -> impl Iterator<Item = PosStencilMut<'_, T>> {
+) -> impl Iterator<Item = PosStencilMut<T>> {
     assert!(
         dim > idx!(0, 0) && dim.iter().fold(1, std::ops::Mul::mul) == data.len(),
         "Wrong dimensions."
@@ -108,6 +107,8 @@ fn test() {
 
 #[test]
 fn test_parallel() {
+    use rayon::prelude::*;
+
     // Grid:
     // 4 5 6
     // 1 2 3

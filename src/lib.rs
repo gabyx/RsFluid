@@ -2,6 +2,7 @@
 #![feature(associated_type_defaults)]
 #![feature(trait_alias)]
 #![feature(result_option_inspect)]
+#![feature(iter_collect_into)]
 
 #[macro_use]
 extern crate derive_builder;
