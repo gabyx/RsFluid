@@ -1,6 +1,9 @@
 use crate::types::*;
 
-pub struct PosStencilMut<'a, T> {
+pub struct PosStencilMut<'a, T>
+where
+    T: Send + Sync,
+{
     /// The current cell.
     pub cell: &'a mut T,
 
@@ -8,7 +11,10 @@ pub struct PosStencilMut<'a, T> {
     pub neighbors: [&'a mut T; 2],
 }
 
-pub trait PosStencil<T> {
+pub trait PosStencil<T>
+where
+    T: Send + Sync
+{
     fn positive_stencils_mut(
         &mut self,
         dim: Index2,
@@ -18,7 +24,10 @@ pub trait PosStencil<T> {
     ) -> Box<dyn Iterator<Item = PosStencilMut<T>> + '_>;
 }
 
-impl<T> PosStencil<T> for Vec<T> {
+impl<T> PosStencil<T> for Vec<T>
+where
+    T: Send + Sync
+{
     fn positive_stencils_mut(
         &mut self,
         dim: Index2,
@@ -43,7 +52,10 @@ pub fn positive_stencils_mut<T>(
     min: Option<Index2>,
     max: Option<Index2>,
     offset: Option<Index2>, // Stencil offset added to min/max.
-) -> impl Iterator<Item = PosStencilMut<T>> {
+) -> impl Iterator<Item = PosStencilMut<T>>
+where
+    T: Send + Sync
+{
     assert!(
         dim > idx!(0, 0) && dim.iter().fold(1, std::ops::Mul::mul) == data.len(),
         "Wrong dimensions."
@@ -129,6 +141,9 @@ fn test_parallel() {
 
     assert!(v[(2, 0)] == 3);
     assert!(v[(2, 1)] == 6);
+
+    //positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None).par_iter();
+
 }
 
 #[test]
