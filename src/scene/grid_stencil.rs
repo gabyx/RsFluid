@@ -2,7 +2,10 @@ use crate::types::*;
 use rayon::prelude::*;
 
 pub struct PosStencilMut<'a, T> {
+    /// The current cell.
     pub cell: &'a mut T,
+
+    /// The positive neighbors in `x`,`y`-direction.
     pub neighbors: [&'a mut T; 2],
 }
 
@@ -125,8 +128,6 @@ fn test_parallel() {
 
     assert!(v[(2, 0)] == 3);
     assert!(v[(2, 1)] == 6);
-
-    positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None).par_iter()
 }
 
 #[test]

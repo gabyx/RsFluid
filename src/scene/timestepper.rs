@@ -11,6 +11,7 @@ pub trait Integrate {
         _dt: Scalar,
         _iterations: u64,
         _density: Scalar,
+        _parallel: bool,
     ) {
     }
 
@@ -43,6 +44,8 @@ pub struct TimeStepper<'a> {
     incompress_iters: u64,
 
     t: Scalar,
+    parallel: bool,
+
     pub objects: Vec<Box<dyn Integrate>>,
     pub manipulators: Vec<Box<dyn Manipulator>>,
 
@@ -55,6 +58,7 @@ impl<'a> TimeStepper<'a> {
         density: Scalar,
         gravity: Vector2,
         incompress_iters: u64,
+        parallel: bool,
         objects: Vec<Box<dyn Integrate>>,
         manipulators: Vec<Box<dyn Manipulator>>,
     ) -> Self {
@@ -63,6 +67,7 @@ impl<'a> TimeStepper<'a> {
             gravity,
             density,
             incompress_iters,
+            parallel,
             objects,
             manipulators,
             t: 0.0,
@@ -114,7 +119,13 @@ impl<'a> TimeStepper<'a> {
         info!(self.log, "Solve incompressibility at t: '{:0.3}'.", self.t,);
 
         for obj in self.objects.iter_mut() {
-            obj.solve_incompressibility(self.log, dt, self.incompress_iters, self.density);
+            obj.solve_incompressibility(
+                self.log,
+                dt,
+                self.incompress_iters,
+                self.density,
+                self.parallel,
+            );
         }
     }
 

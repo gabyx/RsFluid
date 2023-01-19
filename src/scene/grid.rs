@@ -1,136 +1,13 @@
 use crate::log::{debug, info, warn, Logger};
+use crate::scene::cell::*;
+use crate::scene::cell_stats::*;
 use crate::scene::grid_stencil::*;
 use crate::scene::timestepper::Integrate;
 use crate::types::*;
-
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::any::Any;
 use std::num::Wrapping;
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum CellTypes {
-    Solid,
-    Fluid,
-}
-
-#[derive(Clone, Debug)]
-pub struct Cell {
-    index: Index2,
-    pub mode: CellTypes,
-
-    // Velocity x,y:
-    // - v_x is at the location (h/2, 0),
-    // - v_y is at the location (0, h/2),
-    pub velocity: FrontBackBuffer<Vector2>,
-    pub pressure: Scalar,
-    pub smoke: FrontBackBuffer<Scalar>,
-    pub div: Scalar,
-
-    // Fields for parallel computation (only).
-    // ================================
-    pub div_normed: Scalar,
-
-    // Div splitting factor:
-    // For fluid cells: 1.0 / (Sum(fluid neighbors)) =
-    //                  1.0 / s_nbs.sum()
-    pub s: Scalar,
-
-    // Flag denoting if neighbor is a fluid cell:
-    // [neg-direction, pos-direction]
-    pub s_nbs: [Index2T<u8>; 2],
-    // ================================
-}
-
-#[derive(Clone, Debug)]
-pub struct Stats {
-    pub velocity: Vector2,
-    pub velocity_norm: Scalar,
-    pub pressure: Scalar,
-    pub smoke: Scalar,
-    pub div: Scalar,
-}
-
-impl Cell {
-    pub fn new(index: Index2) -> Self {
-        let default_vel = Vector2::from_element(0.0);
-        let default_pressure = 0.0;
-        let default_smoke = 0.0;
-
-        return Cell {
-            velocity: FrontBackBuffer {
-                front: default_vel,
-                back: default_vel,
-            },
-            div: 0.0,
-            div_normed: 0.0,
-            s: 0.0,
-            pressure: default_pressure,
-            smoke: FrontBackBuffer {
-                front: default_smoke,
-                back: default_smoke,
-            },
-            mode: CellTypes::Fluid,
-            index,
-        };
-    }
-
-    pub fn index(&self) -> Index2 {
-        return self.index;
-    }
-}
-
-impl Stats {
-    fn identity<const I: usize>() -> Stats {
-        let init = if I == 0 { std::f64::MAX } else { std::f64::MIN };
-        let init_vec2 = Vector2::from_element(init);
-
-        return Stats {
-            velocity: init_vec2,
-            velocity_norm: init,
-            pressure: init,
-            smoke: init,
-            div: init,
-        };
-    }
-
-    pub fn from(cell: &Cell) -> Stats {
-        return Stats {
-            velocity: cell.velocity.back,
-            velocity_norm: cell.velocity.back.norm(),
-            pressure: cell.pressure,
-            smoke: cell.smoke.back,
-            div: cell.div,
-        };
-    }
-
-    fn accumulate<const I: usize>(&self, stats: &Stats) -> Stats {
-        const MIN_MAX: [fn(f64, f64) -> f64; 2] = [Scalar::min, Scalar::max];
-        const MIN_MAX_V2: [fn(&Vector2, &Vector2) -> Vector2; 2] = [Vector2::inf, Vector2::sup];
-
-        return Stats {
-            velocity: MIN_MAX_V2[I](&self.velocity, &stats.velocity),
-            velocity_norm: MIN_MAX[I](self.velocity_norm, stats.velocity_norm),
-            pressure: MIN_MAX[I](self.pressure, stats.pressure),
-            smoke: MIN_MAX[I](self.smoke, stats.smoke),
-            div: MIN_MAX[I](self.div, stats.div),
-        };
-    }
-
-    pub fn min_identity() -> Stats {
-        return Self::identity::<0>();
-    }
-    pub fn max_identity() -> Stats {
-        return Self::identity::<1>();
-    }
-
-    pub fn min(&self, stats: &Stats) -> Stats {
-        return self.accumulate::<0>(&stats);
-    }
-    pub fn max(&self, stats: &Stats) -> Stats {
-        return self.accumulate::<1>(&stats);
-    }
-}
 
 pub struct Grid {
     pub cell_width: Scalar,
@@ -146,10 +23,9 @@ pub struct Grid {
     offsets: [Vector2; 2],
 }
 
-type GridIndex = Index2;
-
+#[derive(Clone)]
 pub struct GridIndexIterator {
-    curr: GridIndex,
+    curr: Index2,
 
     min: Index2,
     max: Index2,
@@ -166,7 +42,7 @@ impl GridIndexIterator {
 }
 
 impl Iterator for GridIndexIterator {
-    type Item = GridIndex;
+    type Item = Index2;
 
     fn next(&mut self) -> Option<Self::Item> {
         let curr = self.curr; // Copy current.
@@ -353,23 +229,6 @@ impl Grid {
     }
 }
 
-impl Integrate for Cell {
-    fn integrate(&mut self, _log: &Logger, dt: Scalar, gravity: Vector2) {
-        self.velocity.back = match self.mode {
-            CellTypes::Solid => self.velocity.back,
-            CellTypes::Fluid => self.velocity.back + dt * gravity,
-        };
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-}
-
 impl Integrate for Grid {
     fn as_any(&self) -> &dyn Any {
         self
@@ -434,8 +293,13 @@ impl Integrate for Grid {
         dt: Scalar,
         iterations: u64,
         density: Scalar,
+        parallel: bool,
     ) {
-        self.solve_incompressibility_sequential(log, dt, iterations, density);
+        if parallel {
+            self.solve_incompressibility_parallel(log, dt, iterations, density);
+        } else {
+            self.solve_incompressibility_sequential(log, dt, iterations, density);
+        }
     }
 
     fn advect(&mut self, log: &slog::Logger, dt: Scalar) {
@@ -445,6 +309,26 @@ impl Integrate for Grid {
 }
 
 impl Grid {
+    fn apply_pos_stencils<T>(&mut self, func: T)
+    where
+        T: Fn(&mut PosStencilMut<Cell>) + Send + Sync,
+    {
+        const OFFSETS: [Index2; 4] = [idx!(0, 0), idx!(1, 0), idx!(0, 1), idx!(1, 1)];
+
+        for offset in OFFSETS.iter() {
+            let mut stencils: Vec<_> = positive_stencils_mut(
+                self.cells.as_mut_slice(),
+                self.dim,
+                Some(idx!(1, 1)),
+                Some(self.dim - idx!(1, 1)),
+                Some(*offset),
+            )
+            .collect();
+
+            stencils.par_iter_mut().for_each(&func);
+        }
+    }
+
     fn solve_incompressibility_parallel(
         &mut self,
         log: &Logger,
@@ -459,39 +343,80 @@ impl Grid {
             self.dim
         );
 
-        // Set pressure field to zero.
-        self.cells.par_iter_mut().for_each(|c| c.pressure = 0.0);
-
         let r = 1.9; // Overrelaxation factor.
         let cp = density * self.cell_width / dt;
 
-        let offsets = [idx!(0, 0), idx!(1, 0), idx!(0, 1), idx!(1, 1)];
-        let mut stencils = Vec::with_capacity(self.cells.len());
-
-        let s_factor = |stencil: &mut Cell| {
+        let s_factor = |cell: &mut Cell| {
             return if cell.mode == CellTypes::Solid {
-                0
+                0.0
             } else {
-                1
+                1.0
             };
         };
 
-        for (_iter, offset) in (0..iterations).cartesian_product(offsets.iter()) {
-            stencils = positive_stencils_mut(
-                self.cells.as_mut_slice(),
-                self.dim,
-                Some(idx!(1, 1)),
-                Some(self.dim - idx!(1, 1)),
-                Some(*offset),
-            )
-            .collect();
+        debug!(log, "Distribute all 's' factors for total sum.");
+        self.apply_pos_stencils(|s: &mut PosStencilMut<Cell>| {
+            // This cell (1: pos, 0: x)  <-- s from pos x-neighbor.
+            s.cell.s_nbs[1][0] = s_factor(s.neighbors[0]);
+            // Pos. x-neighbor (0: neg, 0: x) <-- s from this cell.
+            s.neighbors[0].s_nbs[0][0] = s_factor(s.cell);
 
-            stencils.par_iter_mut().for_each(|s| {
-                s.cell.s_nbs[1][0] = s_factor(s.neighbors[0]);
-                s.neighbors[0].s_nbs[0][0] = s_factor(s.cell);
+            // This cell (1: pos, 1: y) <-- s from pos y-neighbor.
+            s.cell.s_nbs[1][1] = s_factor(s.neighbors[1]);
+            // Pos. x-neighbor (0: neg, 1: y) <-- s from this cell.
+            s.neighbors[1].s_nbs[0][1] = s_factor(s.cell);
+        });
 
-                s.cell.s_nbs[1][1] = s_factor(s.neighbors[1]);
-                s.neighbors[1].s_nbs[0][1] = s_factor(s.cell);
+        debug!(log, "Sum all 's' factors in all cells.");
+        self.cells.par_iter_mut().for_each(|c: &mut Cell| {
+            // Reset pressure field.
+            c.pressure = 0.0;
+
+            let mut sum = 0.0;
+            c.s_nbs.iter().for_each(|s| {
+                sum += s.sum();
+            });
+
+            // Store the inverse.
+            c.s_tot_inv = if sum != 0.0 {
+                1.0 / sum
+            } else {
+                warn!(
+                    log,
+                    "Cell with index: '{}' contains only fluid neighbors.", c.index()
+                );
+                0.0
+            };
+        });
+
+        for _iter in 0..iterations {
+            self.apply_pos_stencils(|s: &mut PosStencilMut<Cell>| {
+                if s.cell.s_tot_inv == 0.0 {
+                    debug!(
+                        log,
+                        "Cell with index: '{}' contains only fluid neighbors.", s.cell.index()
+                    );
+                    return;
+                }
+
+                s.cell.div = 0.0;
+                for dir in 0..2 {
+                    s.cell.div += s.neighbors[dir].velocity.back[dir] - s.cell.velocity.back[dir]
+                }
+                s.cell.div_normed = s.cell.div * s.cell.s_tot_inv;
+
+                s.cell.pressure -= cp * s.cell.div_normed;
+
+                // Velocity update own cell.
+                s.cell.velocity.back += r * cp * s.cell.s_nbs[0] * s.cell.div_normed;
+
+                // Velocity update neighbors in x-direction.
+                // Solid cells have s_nbs[_] == 0.
+                s.neighbors[0].velocity.back[0] -= r * s.cell.s_nbs[1].x * s.cell.div_normed;
+
+                // Velocity update neighbors in z-direction.
+                // Solid cells have s_nbs[_] == 0.
+                s.neighbors[1].velocity.back[1] -= r * s.cell.s_nbs[1].y * s.cell.div_normed;
             });
         }
     }
@@ -528,12 +453,12 @@ impl Grid {
                 // Normalization values `s`
                 // for negative/positive neighbors.
                 // - 0: solid, 1: fluid.
-                let mut nbs_s = [Vector2::zeros(), Vector2::zeros()];
+                let mut s_nbs = [Vector2::zeros(), Vector2::zeros()];
                 let mut s = 0.0;
 
                 for neg_pos in 0..2 {
-                    nbs_s[neg_pos] = vec2!(s_factor(nbs[neg_pos][0]), s_factor(nbs[neg_pos][1]));
-                    s += nbs_s[neg_pos].sum();
+                    s_nbs[neg_pos] = vec2!(s_factor(nbs[neg_pos][0]), s_factor(nbs[neg_pos][1]));
+                    s += s_nbs[neg_pos].sum();
                 }
 
                 if s == 0.0 {
@@ -547,9 +472,9 @@ impl Grid {
 
                 let mut div: Scalar = 0.0; // Net outflow on this cell.
                 let pos_idx = 1;
-                let nbs_pos = &nbs[pos_idx];
+                let pos_nbs = &nbs[pos_idx];
                 for dir in 0..2 {
-                    div += get_vel(nbs_pos[dir], dir) - get_vel(idx, dir)
+                    div += get_vel(pos_nbs[dir], dir) - get_vel(idx, dir)
                 }
 
                 self.cell_mut(idx).div = div;
@@ -559,16 +484,16 @@ impl Grid {
                 self.cell_mut(idx).pressure -= cp * div_normed;
 
                 // Add outflow-part to inflows to reach net 0-outflow.
-                // Solid cells have nbs_s[0] == 0.
-                self.cell_mut(idx).velocity.back += r * nbs_s[0] * div_normed;
+                // Solid cells have s_nbs[0] == 0.
+                self.cell_mut(idx).velocity.back += r * s_nbs[0] * div_normed;
 
                 // Subtract outflow-part to outflows to iteratively reach net 0-outflow (div(v) == 0).
-                // Solid cells have nbs_s[0] == 0.
+                // Solid cells have s_nbs[0] == 0.
                 self.cell_mut(nbs[pos_idx][0]).velocity.back.x -=
-                    r * (nbs_s[pos_idx].x) * div_normed;
+                    r * (s_nbs[pos_idx].x) * div_normed;
 
-                // Solid cells have nbs_s[0] == 0.
-                self.cell_mut(nbs[pos_idx][1]).velocity.back.y -= r * nbs_s[pos_idx].y * div_normed;
+                // Solid cells have s_nbs[0] == 0.
+                self.cell_mut(nbs[pos_idx][1]).velocity.back.y -= r * s_nbs[pos_idx].y * div_normed;
             }
         }
 
@@ -623,6 +548,7 @@ impl Grid {
 
         self.cells.par_iter_mut().for_each(|c| c.velocity.swap());
     }
+
     fn advect_smoke(&mut self, log: &slog::Logger, dt: Scalar) {
         debug!(log, "Advect smoke.");
 

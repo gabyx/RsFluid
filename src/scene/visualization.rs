@@ -1,7 +1,8 @@
 use crate::log::*;
 use crate::plotting;
 use crate::plotting::ColorFunction;
-use crate::scene::grid::{CellGetter, CellTypes, Grid};
+use crate::scene::grid::{CellGetter, Grid};
+use crate::scene::cell::CellTypes;
 use crate::scene::timestepper::TimeStepper;
 use crate::types::*;
 use colorgrad;

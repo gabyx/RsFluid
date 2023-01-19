@@ -2,7 +2,8 @@ use std::fmt::Debug;
 use std::str::FromStr;
 
 use crate::log::*;
-use crate::scene::grid::{CellGetter, CellTypes, Grid};
+use crate::scene::grid::{CellGetter, Grid};
+use crate::scene::cell::CellTypes;
 use crate::scene::timestepper::{Integrate, Manipulator, TimeStepper};
 use crate::types::*;
 use clap::Parser;
@@ -72,6 +73,9 @@ pub struct CLIArgs {
 
     #[arg(long = "plot-stats", default_value_t = false)]
     pub plot_stats: bool,
+
+    #[arg(long = "parallel", default_value_t = false)]
+    pub parallel: bool,
 
     #[arg(long = "show-progress", default_value_t = false)]
     pub show_progress: bool,
@@ -182,6 +186,7 @@ pub fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<Ti
         cli.density,
         grav,
         cli.incompress_iter,
+        cli.parallel,
         objs,
         manips,
     ));
