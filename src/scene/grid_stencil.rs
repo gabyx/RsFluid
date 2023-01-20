@@ -1,4 +1,6 @@
+use crate::math::*;
 use crate::types::*;
+
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use rayon::slice::ParallelSliceMut;
 
@@ -17,8 +19,8 @@ where
 pub fn positive_stencils_mut<T>(
     data: &mut [T],
     dim: Index2,
-    min: Option<Index2>,
-    max: Option<Index2>,
+    min: Option<Index2>,    // Min point.
+    max: Option<Index2>,    // Max point (exclusive).
     offset: Option<Index2>, // Stencil offset added to min/max.
 ) -> impl ParallelIterator<Item = PosStencilMut<T>>
 where
@@ -30,23 +32,30 @@ where
     );
 
     let mut min = min.unwrap_or(Index2::zeros());
-    let mut max = max.unwrap_or(dim - idx!(1, 1));
+    let mut max = max.unwrap_or(dim);
 
     let offset = offset.unwrap_or(Index2::zeros());
     // Shift all stencils by this offset.
     min += offset;
-    max += offset;
+    max = clamp_to_range(idx!(0, 0), dim, max + offset);
 
-    assert!(min >= Index2::zeros() && max < dim);
+    assert!(
+        min >= Index2::zeros() && max <= dim,
+        "Min: {} and max: {}, dim: {}",
+        min,
+        max,
+        dim
+    );
 
     let start_y = 0 + min.y * dim.x;
+    let stop_y = 0 + max.y * dim.x; // exclusive.
 
-    return data[start_y..]
+    return data[start_y..stop_y]
         .par_chunks_exact_mut(2 * dim.x)
         .flat_map(move |row| {
             let (top, bot) = row.split_at_mut(dim.x);
-            let y0 = top[min.x..].par_chunks_exact_mut(2);
-            let y1 = bot[min.x..].par_chunks_exact_mut(2);
+            let y0 = top[min.x..max.x].par_chunks_exact_mut(2);
+            let y1 = bot[min.x..max.x].par_chunks_exact_mut(2);
 
             y0.zip(y1).map(|ys| match ys {
                 ([ref mut x0_y0, ref mut x1_y0], [ref mut x0_y1, _]) => PosStencilMut {
@@ -56,111 +65,148 @@ where
                 _ => unreachable!(),
             })
         });
-
 }
 
-#[test]
-fn test() {
-    // Grid:
-    // 4 5 6
-    // 1 2 3
-    // -> x
-    let mut v = nalgebra::Matrix3x2::<usize>::new(1, 4, 2, 5, 3, 6);
-    for s in positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None) {
-        *s.cell += 3;
+mod test {
+    use crate::scene::grid_stencil::*;
 
-        *s.neighbors[0] += 3;
-        *s.neighbors[1] += 3;
+    #[test]
+    fn test() {
+        // Grid:
+        // 4 5 6
+        // 1 2 3
+        // -> x
+        let mut v = nalgebra::Matrix3x2::<usize>::new(1, 4, 2, 5, 3, 6);
+        positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None).for_each(|s| {
+            *s.cell += 3;
+
+            *s.neighbors[0] += 3;
+            *s.neighbors[1] += 3;
+        });
+
+        assert!(v[(0, 0)] == 4);
+        assert!(v[(1, 0)] == 5);
+        assert!(v[(0, 1)] == 7);
+        assert!(v[(1, 1)] == 5);
+
+        assert!(v[(2, 0)] == 3);
+        assert!(v[(2, 1)] == 6);
+
+        print!("{:?}", v.as_slice());
     }
 
-    assert!(v[(0, 0)] == 4);
-    assert!(v[(1, 0)] == 5);
-    assert!(v[(0, 1)] == 7);
-    assert!(v[(1, 1)] == 5);
+    #[test]
+    fn test_parallel() {
+        use rayon::prelude::*;
 
-    assert!(v[(2, 0)] == 3);
-    assert!(v[(2, 1)] == 6);
+        // Grid:
+        // 4 5 6
+        // 1 2 3
+        // -> x
+        let mut v = nalgebra::Matrix3x2::<usize>::new(1, 4, 2, 5, 3, 6);
 
-    print!("{:?}", v.as_slice());
-}
+        positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None).for_each(|s| {
+            *s.cell += 3;
+            *s.neighbors[0] += 3;
+            *s.neighbors[1] += 3;
+        });
 
-#[test]
-fn test_parallel() {
-    use rayon::prelude::*;
+        assert!(v[(0, 0)] == 4);
+        assert!(v[(1, 0)] == 5);
+        assert!(v[(0, 1)] == 7);
+        assert!(v[(1, 1)] == 5);
 
-    // Grid:
-    // 4 5 6
-    // 1 2 3
-    // -> x
-    let mut v = nalgebra::Matrix3x2::<usize>::new(1, 4, 2, 5, 3, 6);
-    let mut stencils: Vec<_> =
-        positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None).collect();
-    stencils.par_iter_mut().for_each(|s| {
-        *s.cell += 3;
-        *s.neighbors[0] += 3;
-        *s.neighbors[1] += 3;
-    });
-
-    assert!(v[(0, 0)] == 4);
-    assert!(v[(1, 0)] == 5);
-    assert!(v[(0, 1)] == 7);
-    assert!(v[(1, 1)] == 5);
-
-    assert!(v[(2, 0)] == 3);
-    assert!(v[(2, 1)] == 6);
-
-}
-
-#[test]
-fn test_without_shift() {
-    // Grid:
-    // 5 6 7 8
-    // 1 2 3 4
-    // -> x
-    let mut v = nalgebra::Matrix4x2::<usize>::new(1, 5, 2, 6, 3, 7, 4, 8);
-    for s in positive_stencils_mut(v.as_mut_slice(), idx!(4, 2), None, None, None) {
-        *s.cell += 3;
-
-        *s.neighbors[0] += 3;
-        *s.neighbors[1] += 3;
+        assert!(v[(2, 0)] == 3);
+        assert!(v[(2, 1)] == 6);
     }
 
-    assert!(v[(0, 0)] == 4);
-    assert!(v[(1, 0)] == 5);
-    assert!(v[(0, 1)] == 8);
-    assert!(v[(1, 1)] == 6);
+    #[test]
+    fn test_without_shift() {
+        // Grid:
+        // 5 6 7 8
+        // 1 2 3 4
+        // -> x
+        let mut v = nalgebra::Matrix4x2::<usize>::new(1, 5, 2, 6, 3, 7, 4, 8);
+        positive_stencils_mut(v.as_mut_slice(), idx!(4, 2), None, None, None).for_each(|s| {
+            *s.cell += 3;
 
-    assert!(v[(2, 0)] == 6);
-    assert!(v[(3, 0)] == 7);
-    assert!(v[(2, 1)] == 10);
-    assert!(v[(3, 1)] == 8);
+            *s.neighbors[0] += 3;
+            *s.neighbors[1] += 3;
+        });
 
-    print!("{:?}", v.as_slice());
-}
+        assert!(v[(0, 0)] == 4);
+        assert!(v[(1, 0)] == 5);
+        assert!(v[(0, 1)] == 8);
+        assert!(v[(1, 1)] == 6);
 
-#[test]
-fn test_with_shift() {
-    // Grid:
-    // 0 5 6 7 8
-    // 0 1 2 3 4
-    // -> x
-    let mut v = nalgebra::Matrix5x2::<usize>::new(0, 0, 1, 5, 2, 6, 3, 7, 4, 8);
-    for s in positive_stencils_mut(v.as_mut_slice(), idx!(5, 2), Some(idx!(1, 0)), None, None) {
-        *s.cell += 3;
+        assert!(v[(2, 0)] == 6);
+        assert!(v[(3, 0)] == 7);
+        assert!(v[(2, 1)] == 10);
+        assert!(v[(3, 1)] == 8);
 
-        *s.neighbors[0] += 3;
-        *s.neighbors[1] += 3;
+        print!("{:?}", v.as_slice());
     }
 
-    assert!(v[(1, 0)] == 4);
-    assert!(v[(2, 0)] == 5);
-    assert!(v[(1, 1)] == 8);
-    assert!(v[(2, 1)] == 6);
+    #[test]
+    fn test_with_shift() {
+        // Grid:
+        // 0 5 6 7 8
+        // 0 1 2 3 4
+        // -> x
+        let mut v = nalgebra::Matrix5x2::<usize>::new(0, 0, 1, 5, 2, 6, 3, 7, 4, 8);
+        positive_stencils_mut(v.as_mut_slice(), idx!(5, 2), Some(idx!(1, 0)), None, None).for_each(
+            |s| {
+                *s.cell += 3;
 
-    assert!(v[(3, 0)] == 6);
-    assert!(v[(4, 0)] == 7);
-    assert!(v[(3, 1)] == 10);
-    assert!(v[(4, 1)] == 8);
+                *s.neighbors[0] += 3;
+                *s.neighbors[1] += 3;
+            },
+        );
 
-    print!("{:?}", v.as_slice());
+        assert!(v[(1, 0)] == 4);
+        assert!(v[(2, 0)] == 5);
+        assert!(v[(1, 1)] == 8);
+        assert!(v[(2, 1)] == 6);
+
+        assert!(v[(3, 0)] == 6);
+        assert!(v[(4, 0)] == 7);
+        assert!(v[(3, 1)] == 10);
+        assert!(v[(4, 1)] == 8);
+
+        print!("{:?}", v.as_slice());
+    }
+
+    #[test]
+    fn test_with_shift_max() {
+        // Grid:
+        // 0 5 6 7 8
+        // 0 1 2 3 4
+        // -> x
+        let mut v = nalgebra::Matrix5x2::<usize>::new(0, 0, 1, 5, 2, 6, 3, 7, 4, 8);
+        positive_stencils_mut(
+            v.as_mut_slice(),
+            idx!(5, 2),
+            None,
+            Some(idx!(3, 2)),
+            Some(idx!(1, 0)),
+        )
+        .for_each(|s| {
+            *s.cell += 3;
+
+            *s.neighbors[0] += 3;
+            *s.neighbors[1] += 3;
+        });
+
+        assert!(v[(1, 0)] == 4);
+        assert!(v[(2, 0)] == 5);
+        assert!(v[(1, 1)] == 8);
+        assert!(v[(2, 1)] == 6);
+
+        assert!(v[(3, 0)] == 3);
+        assert!(v[(4, 0)] == 4);
+        assert!(v[(3, 1)] == 7);
+        assert!(v[(4, 1)] == 8);
+
+        print!("{:?}", v.as_slice());
+    }
 }

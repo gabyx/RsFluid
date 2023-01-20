@@ -8,6 +8,7 @@
         "grav",
         "incompress",
         "manips",
+        "nalgebra",
         "Overrelaxation",
         "progressbar",
         "Timestep",

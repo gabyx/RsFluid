@@ -11,3 +11,4 @@ pub mod log;
 pub mod plotting;
 pub mod scene;
 pub mod types;
+pub mod math;

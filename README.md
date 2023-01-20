@@ -36,7 +36,7 @@ To create the video with `30` frames use:
 ./create-video.sh 30
 ```
 
-# Parallel Implementation
+# Parallel Implementation [WIP]
 
 To implement the parallel version of
 [`solve_incompressibility`](src/scene/grid.rs#L330) we needed to split

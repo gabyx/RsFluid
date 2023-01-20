@@ -18,7 +18,8 @@ cargo run --release --bin rustofluid -- \
     --plot-velocity \
     --plot-pressure \
     --plot-masked-pressure \
-    --plot-masked-velocity
+    --plot-masked-velocity \
+    # --parallel
 
 cd "$DIR" &&
     ffmpeg -y -framerate "$frameRateVideo" -pattern_type glob -i 'frames/frame-press-*.png' \

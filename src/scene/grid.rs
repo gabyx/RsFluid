@@ -1,9 +1,11 @@
 use crate::log::{debug, info, warn, Logger};
+use crate::math::*;
 use crate::scene::cell::*;
 use crate::scene::cell_stats::*;
 use crate::scene::grid_stencil::*;
 use crate::scene::timestepper::Integrate;
 use crate::types::*;
+
 use itertools::Itertools;
 use rayon::prelude::*;
 use std::any::Any;
@@ -98,16 +100,6 @@ impl Grid {
             min: idx!(1, 1),
             max: self.dim - idx!(1, 1),
         };
-    }
-
-    pub fn clamp_to_range<T>(min: Vector2T<T>, max: Vector2T<T>, index: Vector2T<T>) -> Vector2T<T>
-    where
-        T: nalgebra::Scalar + PartialOrd + Copy,
-    {
-        return Vector2T::<T>::new(
-            nalgebra::clamp(index.x, min.x, max.x),
-            nalgebra::clamp(index.y, min.y, max.y),
-        );
     }
 
     pub fn is_inside_range(min: Index2, max: Index2, index: Index2) -> bool {
@@ -309,6 +301,8 @@ impl Integrate for Grid {
 }
 
 impl Grid {
+
+    #[inline(always)]
     fn apply_pos_stencils<T>(&mut self, min: Index2, max: Index2, func: T)
     where
         T: Fn(PosStencilMut<Cell>) + Send + Sync,
@@ -335,7 +329,7 @@ impl Grid {
         density: Scalar,
     ) {
         assert!(
-            (self.dim.x - 1) % 2 == 0 && (self.dim.y - 1) % 2 == 0,
+            self.dim.x % 2 == 0 && self.dim.y % 2 == 0,
             "Internal grid dimensions (dim = {} - 1) must be divisible
              by 2 in each direction.",
             self.dim
@@ -357,16 +351,17 @@ impl Grid {
             // This parallel run runs over all edges affected in the simulation domain.
             // We also run over some boundary cells
             // which we will anyway not use later.
+            let cell_s = s_factor(s.cell);
 
             // This cell (1: pos, 0: x)  <-- s from pos x-neighbor.
             s.cell.s_nbs[1][0] = s_factor(s.neighbors[0]);
             // Pos. x-neighbor (0: neg, 0: x) <-- s from this cell.
-            s.neighbors[0].s_nbs[0][0] = s_factor(s.cell);
+            s.neighbors[0].s_nbs[0][0] = cell_s;
 
             // This cell (1: pos, 1: y) <-- s from pos y-neighbor.
             s.cell.s_nbs[1][1] = s_factor(s.neighbors[1]);
             // Pos. x-neighbor (0: neg, 1: y) <-- s from this cell.
-            s.neighbors[1].s_nbs[0][1] = s_factor(s.cell);
+            s.neighbors[1].s_nbs[0][1] = cell_s;
         });
 
         debug!(log, "Sum all 's' factors in all cells.");
@@ -395,7 +390,7 @@ impl Grid {
         for _iter in 0..iterations {
             self.apply_pos_stencils(
                 idx!(1, 1),
-                self.dim - idx!(1, 1),
+                self.dim,
                 |s: PosStencilMut<Cell>| {
                     // This parallel run runs stencils over the simulation domain:
                     // The `s.cell` will covers all cells in the simulation domain.
@@ -613,16 +608,16 @@ impl Grid {
         // For velocities as they are on a staggered grid.
         let offset = dir.map_or(Vector2::zeros(), |d| self.offsets[d]);
         pos = pos - offset; // Compute position on staggered grid.
-        pos = Grid::clamp_to_range(Vector2::zeros(), self.extent, pos);
+        pos = clamp_to_range(Vector2::zeros(), self.extent, pos);
 
         // Compute index.
         let mut index = Index2::from_iterator((pos * h_inv).iter().map(|v| *v as usize));
 
-        let clamp_index = |i| Grid::clamp_to_range(min, max - idx!(1, 1), i);
+        let clamp_index = |i| clamp_to_range(min, max - idx!(1, 1), i);
 
         index = clamp_index(index);
         let pos_cell = pos - index.cast::<Scalar>() * h;
-        let alpha = Grid::clamp_to_range(vec2!(0.0, 0.0), vec2!(1.0, 1.0), pos_cell * h_inv);
+        let alpha = clamp_to_range(vec2!(0.0, 0.0), vec2!(1.0, 1.0), pos_cell * h_inv);
 
         // debug!(log, "Sample at: {}", index);
 
