@@ -34,9 +34,6 @@ pub struct Cell {
 
     // Fields for parallel computation (only).
     //  ================================================================
-    /// Divergence normed (only for parallel computation).
-    pub div_normed: Scalar,
-
     /// Divergence ratio for velocity correction (only for parallel computation).
     /// For fluid cells: `1.0 / (Sum(fluid neighbors))` =
     ///                  `1.0 / s_nbs.sum()`
@@ -67,8 +64,6 @@ impl Cell {
                 back: default_smoke,
             },
             div: 0.0,
-
-            div_normed: 0.0,
             s_tot_inv: 0.0,
             s_nbs: [Vector2::zeros(), Vector2::zeros()],
         };

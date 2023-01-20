@@ -55,6 +55,27 @@
       "command": "cargo",
       "args": [
         "run",
+        "--bin",
+        "rustofluid",
+        "--",
+        "-e",
+        "0.05",
+        "--timestep",
+        "0.016",
+        "--plot-stats",
+        "--plot-pressure",
+        "--plot-velocity",
+        "--parallel"
+      ],
+      "group": "build",
+      "options": { "env": { "RUST_BACKTRACE": "1" } },
+      "label": "Build & Run [parallel]"
+    },
+    {
+      "problemMatcher": ["$rustc"],
+      "command": "cargo",
+      "args": [
+        "run",
         "--release",
         "--bin",
         "rustofluid",
@@ -66,12 +87,36 @@
         "--plot-stats",
         "--plot-pressure",
         "--plot-velocity",
-        "--plot-masked-pressure",
-        "--plot-masked-velocity"
+        // "--plot-masked-pressure",
+        // "--plot-masked-velocity"
       ],
       "group": "build",
       "options": { "env": { "RUST_BACKTRACE": "1" } },
       "label": "Build & Run Release"
+    },
+      {
+      "problemMatcher": ["$rustc"],
+      "command": "cargo",
+      "args": [
+        "run",
+        "--release",
+        "--bin",
+        "rustofluid",
+        "--",
+        "-e",
+        "2.0",
+        "--timestep",
+        "0.016",
+        "--plot-stats",
+        "--plot-pressure",
+        "--plot-velocity",
+        //"--plot-masked-pressure",
+        //"--plot-masked-velocity",
+        "--parallel"
+      ],
+      "group": "build",
+      "options": { "env": { "RUST_BACKTRACE": "1" } },
+      "label": "Build & Run Release [parallel]"
     }
   ]
 }

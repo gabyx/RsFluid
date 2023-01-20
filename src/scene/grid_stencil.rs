@@ -40,7 +40,7 @@ where
     max = clamp_to_range(idx!(0, 0), dim, max + offset);
 
     assert!(
-        min >= Index2::zeros() && max <= dim,
+        min >= Index2::zeros() && max <= dim && min < max,
         "Min: {} and max: {}, dim: {}",
         min,
         max,

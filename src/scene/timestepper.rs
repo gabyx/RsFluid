@@ -11,7 +11,7 @@ pub trait Integrate {
         _dt: Scalar,
         _iterations: u64,
         _density: Scalar,
-        _parallel: bool,
+        _parallel: ExecutionMode,
     ) {
     }
 
@@ -44,12 +44,19 @@ pub struct TimeStepper<'a> {
     incompress_iters: u64,
 
     t: Scalar,
-    parallel: bool,
+    execution_mode: ExecutionMode,
 
     pub objects: Vec<Box<dyn Integrate>>,
     pub manipulators: Vec<Box<dyn Manipulator>>,
 
     log: &'a Logger,
+}
+
+#[derive(Copy, Clone)]
+pub enum ExecutionMode {
+    Single,
+    Parallel,
+    ParallelUnsafe,
 }
 
 impl<'a> TimeStepper<'a> {
@@ -58,7 +65,7 @@ impl<'a> TimeStepper<'a> {
         density: Scalar,
         gravity: Vector2,
         incompress_iters: u64,
-        parallel: bool,
+        execution_mode: ExecutionMode,
         objects: Vec<Box<dyn Integrate>>,
         manipulators: Vec<Box<dyn Manipulator>>,
     ) -> Self {
@@ -67,7 +74,7 @@ impl<'a> TimeStepper<'a> {
             gravity,
             density,
             incompress_iters,
-            parallel,
+            execution_mode: execution_mode,
             objects,
             manipulators,
             t: 0.0,
@@ -124,7 +131,7 @@ impl<'a> TimeStepper<'a> {
                 dt,
                 self.incompress_iters,
                 self.density,
-                self.parallel,
+                self.execution_mode,
             );
         }
     }

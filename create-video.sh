@@ -5,6 +5,8 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 
 frameRate="${1?'First argument: Framerate.'}"
+shift 1
+
 timestep=$(echo "scale=3; 1.0/$frameRate" | bc)
 frameRateVideo="$frameRate"
 
@@ -19,7 +21,7 @@ cargo run --release --bin rustofluid -- \
     --plot-pressure \
     --plot-masked-pressure \
     --plot-masked-velocity \
-    # --parallel
+    "$@"
 
 cd "$DIR" &&
     ffmpeg -y -framerate "$frameRateVideo" -pattern_type glob -i 'frames/frame-press-*.png' \

@@ -1,53 +1,8 @@
+use crate::math::*;
+use crate::scene::grid_stencil::PosStencilMut;
 use crate::types::*;
 use itertools::Itertools;
-
-pub struct PosStencilMut<'a, T> {
-    pub cell: &'a mut T,
-    pub neighbors: [Option<&'a mut T>; 2],
-}
-
-impl<'a, T> PosStencilMut<'a, T> {
-    #[inline(always)]
-    fn get_neighbors<'cell>(cell: *mut T, dim: Index2, index: Index2) -> [Option<&'cell mut T>; 2] {
-        assert!(dim.x >= 1 && dim.y >= 1);
-
-        let mut nbs = [None, None];
-
-        for dir in 0..2 {
-            if index[dir] >= dim[dir] - 1 {
-                // No neighbor possible.
-                continue;
-            }
-
-            // For x-direction : offset = 1, for y-direction: offset = dim[0],
-            // general: for n-direction: offset = dim[0]*dim[1]*...*dim[n-1]
-            let offset = dim.iter().take(dir).fold(1, std::ops::Mul::mul);
-            nbs[dir] = Some(unsafe { &mut *cell.add(offset) });
-        }
-
-        return nbs;
-    }
-}
-
-pub trait PosStencil<'a, T: 'a> {
-    fn positive_stencils_mut(
-        &'a mut self,
-        dim: Index2,
-        min: Option<Index2>,
-        max: Option<Index2>,
-    ) -> Box<dyn Iterator<Item = PosStencilMut<'a, T>> + '_>;
-}
-
-impl<'a, T: 'a> PosStencil<'a, T> for Vec<T> {
-    fn positive_stencils_mut(
-        &'a mut self,
-        dim: Index2,
-        min: Option<Index2>,
-        max: Option<Index2>,
-    ) -> Box<dyn Iterator<Item = PosStencilMut<'a, T>> + '_> {
-        return Box::new(positive_stencils_mut(self.as_mut_slice(), dim, min, max));
-    }
-}
+use rayon::prelude::*;
 
 /// First dimension is stored first (column-major).
 pub fn positive_stencils_mut<T>(
@@ -55,16 +10,35 @@ pub fn positive_stencils_mut<T>(
     dim: Index2,
     min: Option<Index2>,
     max: Option<Index2>,
-) -> impl Iterator<Item = PosStencilMut<'_, T>> {
+    offset: Option<Index2>, // Stencil offset added to min/max.
+) -> impl ParallelIterator<Item = PosStencilMut<'_, T>>
+where
+    T: Send + Sync,
+{
     assert!(
         dim > idx!(0, 0) && dim.iter().fold(1, std::ops::Mul::mul) == data.len(),
         "Wrong dimensions."
     );
 
-    let min = min.unwrap_or(Index2::zeros());
-    let max = max.unwrap_or(dim - idx!(1, 1));
+    let mut min = min.unwrap_or(Index2::zeros());
+    let mut max = max.unwrap_or(dim);
 
-    assert!(min >= Index2::zeros() && max < dim);
+    let offset = offset.unwrap_or(Index2::zeros());
+    // Shift all stencils by this offset.
+    min += offset;
+    max = clamp_to_range(idx!(0, 0), dim, max + offset);
+
+    for dir in 0..2 {
+        max[dir] -= (max[dir] - min[dir]) % 2 // Subtract the remainder to make the range correct.
+    }
+
+    assert!(
+        min >= Index2::zeros() && max <= dim && min < max,
+        "Min: {} and max: {}, dim: {}",
+        min,
+        max,
+        dim
+    );
 
     return (min[0]..max[0])
         .step_by(2)
@@ -79,9 +53,12 @@ pub fn positive_stencils_mut<T>(
             // Get two non-aliasing mutable references for the neighbors.
             return PosStencilMut {
                 cell: unsafe { &mut *cell },
-                neighbors: PosStencilMut::get_neighbors::<'_>(cell, dim, index),
+                neighbors: [unsafe { &mut *cell.add(1) }, unsafe {
+                    &mut *cell.add(dim[0])
+                }],
             };
-        });
+        }).par_bridge();
+
 }
 
 #[test]

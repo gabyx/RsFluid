@@ -2,9 +2,9 @@ use std::fmt::Debug;
 use std::str::FromStr;
 
 use crate::log::*;
-use crate::scene::grid::{CellGetter, Grid};
 use crate::scene::cell::CellTypes;
-use crate::scene::timestepper::{Integrate, Manipulator, TimeStepper};
+use crate::scene::grid::{CellGetter, Grid};
+use crate::scene::timestepper::{Integrate, Manipulator, TimeStepper, ExecutionMode};
 use crate::types::*;
 use clap::Parser;
 use nalgebra as na;
@@ -77,6 +77,9 @@ pub struct CLIArgs {
     #[arg(long = "parallel", default_value_t = false)]
     pub parallel: bool,
 
+    #[arg(long = "parallel-unsafe", default_value_t = false)]
+    pub parallel_unsafe: bool,
+
     #[arg(long = "show-progress", default_value_t = false)]
     pub show_progress: bool,
 }
@@ -134,7 +137,7 @@ pub fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<Ti
 
     info!(
         log,
-        "Grid: {} x {}, [dim-x: {}, dim-y: {}, cell-width: {}]",
+        "Grid: {:.2} x {:.2}, [dim-x: {}, dim-y: {}, cell-width: {}]",
         width,
         height,
         cli.dim.x,
@@ -171,7 +174,6 @@ pub fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<Ti
     let p = vec2!(width * 0.25, height * 0.5);
     grid.set_obstacle(p, obstacle_size / 2.0, None);
 
-
     // Set manipulator (for smoke).
     let smoke_adder = Box::new(AddSmokeBar {
         center: idx!(1, grid.dim.y / 2),
@@ -181,12 +183,20 @@ pub fn setup_scene<'t>(log: &'t Logger, cli: &'t CLIArgs) -> SimpleResult<Box<Ti
     let manips: Vec<Box<dyn Manipulator>> = vec![smoke_adder];
     let objs: Vec<Box<dyn Integrate>> = vec![grid];
 
+
+    let exec_mode = if cli.parallel {
+            ExecutionMode::Parallel
+        } else if cli.parallel_unsafe {
+            ExecutionMode::ParallelUnsafe
+        } else {
+            ExecutionMode::Single
+        };
     let timestepper = Box::new(TimeStepper::new(
         &log,
         cli.density,
         grav,
         cli.incompress_iter,
-        cli.parallel,
+        exec_mode,
         objs,
         manips,
     ));

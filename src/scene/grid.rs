@@ -2,8 +2,10 @@ use crate::log::{debug, info, warn, Logger};
 use crate::math::*;
 use crate::scene::cell::*;
 use crate::scene::cell_stats::*;
-use crate::scene::grid_stencil::*;
-use crate::scene::timestepper::Integrate;
+use crate::scene::grid_stencil;
+use crate::scene::grid_stencil::PosStencilMut;
+use crate::scene::grid_stencil_unsafe;
+use crate::scene::timestepper::{ExecutionMode, Integrate};
 use crate::types::*;
 
 use itertools::Itertools;
@@ -285,13 +287,20 @@ impl Integrate for Grid {
         dt: Scalar,
         iterations: u64,
         density: Scalar,
-        parallel: bool,
+        execution_mode: ExecutionMode,
     ) {
-        if parallel {
-            self.solve_incompressibility_parallel(log, dt, iterations, density);
-        } else {
-            self.solve_incompressibility_sequential(log, dt, iterations, density);
+        match execution_mode {
+            ExecutionMode::Parallel => {
+                self.solve_incompressibility_parallel(log, dt, iterations, density, false);
+            }
+            ExecutionMode::ParallelUnsafe => {
+                self.solve_incompressibility_parallel(log, dt, iterations, density, true);
+            }
+            ExecutionMode::Single => {
+                self.solve_incompressibility_sequential(log, dt, iterations, density);
+            }
         }
+        self.compute_stats(&log);
     }
 
     fn advect(&mut self, log: &slog::Logger, dt: Scalar) {
@@ -301,23 +310,35 @@ impl Integrate for Grid {
 }
 
 impl Grid {
-
     #[inline(always)]
-    fn apply_pos_stencils<T>(&mut self, min: Index2, max: Index2, func: T)
+    fn apply_pos_stencils<T>(&mut self, use_unsafe: bool, min: Index2, max: Index2, func: T)
     where
         T: Fn(PosStencilMut<Cell>) + Send + Sync,
     {
         const OFFSETS: [Index2; 4] = [idx!(0, 0), idx!(1, 0), idx!(0, 1), idx!(1, 1)];
 
-        for offset in OFFSETS.iter() {
-            positive_stencils_mut(
-                self.cells.as_mut_slice(),
-                self.dim,
-                Some(min),
-                Some(max),
-                Some(*offset),
-            )
-            .for_each(&func);
+        if use_unsafe {
+            for offset in OFFSETS.iter() {
+                grid_stencil_unsafe::positive_stencils_mut(
+                    self.cells.as_mut_slice(),
+                    self.dim,
+                    Some(min),
+                    Some(max),
+                    Some(*offset),
+                )
+                .for_each(&func);
+            }
+        } else {
+            for offset in OFFSETS.iter() {
+                grid_stencil::positive_stencils_mut(
+                    self.cells.as_mut_slice(),
+                    self.dim,
+                    Some(min),
+                    Some(max),
+                    Some(*offset),
+                )
+                .for_each(&func);
+            }
         }
     }
 
@@ -327,6 +348,7 @@ impl Grid {
         dt: Scalar,
         iterations: u64,
         density: Scalar,
+        use_unsafe: bool,
     ) {
         assert!(
             self.dim.x % 2 == 0 && self.dim.y % 2 == 0,
@@ -347,25 +369,34 @@ impl Grid {
         };
 
         debug!(log, "Distribute all 's' factors for total sum.");
-        self.apply_pos_stencils(idx!(0, 0), self.dim, |s: PosStencilMut<Cell>| {
-            // This parallel run runs over all edges affected in the simulation domain.
-            // We also run over some boundary cells
-            // which we will anyway not use later.
-            let cell_s = s_factor(s.cell);
+        self.apply_pos_stencils(
+            use_unsafe,
+            idx!(0, 0),
+            self.dim,
+            |s: PosStencilMut<Cell>| {
+                // This parallel run runs over all edges affected in the simulation domain.
+                // We also run over some boundary cells
+                // which we will anyway not use later.
+                let cell_s = s_factor(s.cell);
 
-            // This cell (1: pos, 0: x)  <-- s from pos x-neighbor.
-            s.cell.s_nbs[1][0] = s_factor(s.neighbors[0]);
-            // Pos. x-neighbor (0: neg, 0: x) <-- s from this cell.
-            s.neighbors[0].s_nbs[0][0] = cell_s;
+                // This cell (1: pos, 0: x)  <-- s from pos x-neighbor.
+                s.cell.s_nbs[1][0] = s_factor(s.neighbors[0]);
+                // This cell (1: pos, 1: y) <-- s from pos y-neighbor.
+                s.cell.s_nbs[1][1] = s_factor(s.neighbors[1]);
 
-            // This cell (1: pos, 1: y) <-- s from pos y-neighbor.
-            s.cell.s_nbs[1][1] = s_factor(s.neighbors[1]);
-            // Pos. x-neighbor (0: neg, 1: y) <-- s from this cell.
-            s.neighbors[1].s_nbs[0][1] = cell_s;
-        });
+                // Pos. x-neighbor (0: neg, 0: x) <-- s from this cell.
+                s.neighbors[0].s_nbs[0][0] = cell_s;
+                // Pos. x-neighbor (0: neg, 1: y) <-- s from this cell.
+                s.neighbors[1].s_nbs[0][1] = cell_s;
+            },
+        );
 
         debug!(log, "Sum all 's' factors in all cells.");
         self.cells.par_iter_mut().for_each(|c: &mut Cell| {
+            if c.mode == CellTypes::Solid {
+                return;
+            }
+
             // Reset pressure field.
             c.pressure = 0.0;
 
@@ -378,10 +409,11 @@ impl Grid {
             c.s_tot_inv = if sum != 0.0 {
                 1.0 / sum
             } else {
-                warn!(
-                    log,
-                    "Cell with index: '{}' contains only fluid neighbors.",
-                    c.index()
+                debug_assert!(
+                    false,
+                    "Cell with index: '{}' [solid: {:?} contains only solid neighbors.",
+                    c.index(),
+                    c.mode,
                 );
                 0.0
             };
@@ -389,40 +421,41 @@ impl Grid {
 
         for _iter in 0..iterations {
             self.apply_pos_stencils(
+                use_unsafe,
                 idx!(1, 1),
                 self.dim,
                 |s: PosStencilMut<Cell>| {
                     // This parallel run runs stencils over the simulation domain:
                     // The `s.cell` will covers all cells in the simulation domain.
 
-                    if s.cell.s_tot_inv == 0.0 {
-                        debug!(
-                            log,
-                            "Cell with index: '{}' contains only fluid neighbors.",
-                            s.cell.index()
-                        );
+                    if s.cell.mode == CellTypes::Solid {
                         return;
                     }
+
+                    debug_assert!(
+                        s.cell.s_tot_inv != 0.0,
+                        "Cell with index: '{}' contains only fluid neighbors.",
+                        s.cell.index()
+                    );
 
                     s.cell.div = 0.0;
                     for dir in 0..2 {
                         s.cell.div +=
                             s.neighbors[dir].velocity.back[dir] - s.cell.velocity.back[dir]
                     }
-                    s.cell.div_normed = s.cell.div * s.cell.s_tot_inv;
 
-                    s.cell.pressure -= cp * s.cell.div_normed;
+                    let div_normed = s.cell.div * s.cell.s_tot_inv;
+
+                    s.cell.pressure -= cp * div_normed;
 
                     // Velocity update own cell.
-                    s.cell.velocity.back += r * cp * s.cell.s_nbs[0] * s.cell.div_normed;
+                    s.cell.velocity.back += r * s.cell.s_nbs[0] * div_normed;
 
                     // Velocity update neighbors in x-direction.
                     // Solid cells have s_nbs[_] == 0.
-                    s.neighbors[0].velocity.back[0] -= r * s.cell.s_nbs[1].x * s.cell.div_normed;
-
-                    // Velocity update neighbors in z-direction.
-                    // Solid cells have s_nbs[_] == 0.
-                    s.neighbors[1].velocity.back[1] -= r * s.cell.s_nbs[1].y * s.cell.div_normed;
+                    s.neighbors[0].velocity.back[0] -= r * s.cell.s_nbs[1].x * div_normed;
+                    // Velocity update neighbors in y-direction.
+                    s.neighbors[1].velocity.back[1] -= r * s.cell.s_nbs[1].y * div_normed;
                 },
             );
         }
@@ -495,16 +528,11 @@ impl Grid {
                 self.cell_mut(idx).velocity.back += r * s_nbs[0] * div_normed;
 
                 // Subtract outflow-part to outflows to iteratively reach net 0-outflow (div(v) == 0).
-                // Solid cells have s_nbs[0] == 0.
-                self.cell_mut(nbs[pos_idx][0]).velocity.back.x -=
-                    r * (s_nbs[pos_idx].x) * div_normed;
-
-                // Solid cells have s_nbs[0] == 0.
+                // Solid cells have s_nbs[_] == 0.
+                self.cell_mut(nbs[pos_idx][0]).velocity.back.x -= r * s_nbs[pos_idx].x * div_normed;
                 self.cell_mut(nbs[pos_idx][1]).velocity.back.y -= r * s_nbs[pos_idx].y * div_normed;
             }
         }
-
-        self.compute_stats(&log);
     }
 
     fn advect_velocity(&mut self, log: &slog::Logger, dt: Scalar) {
