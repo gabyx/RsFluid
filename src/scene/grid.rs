@@ -309,7 +309,7 @@ impl Integrate for Grid {
 }
 
 impl Grid {
-    fn apply_pos_stencils<T>(&mut self, func: T)
+    fn apply_pos_stencils<T>(&mut self, min: Index2, max: Index2, func: T)
     where
         T: Fn(PosStencilMut<Cell>) + Send + Sync,
     {
@@ -319,8 +319,8 @@ impl Grid {
             positive_stencils_mut(
                 self.cells.as_mut_slice(),
                 self.dim,
-                Some(idx!(1, 1)),
-                Some(self.dim - idx!(1, 1)),
+                Some(min),
+                Some(max),
                 Some(*offset),
             )
             .for_each(&func);
@@ -353,7 +353,11 @@ impl Grid {
         };
 
         debug!(log, "Distribute all 's' factors for total sum.");
-        self.apply_pos_stencils(|s: PosStencilMut<Cell>| {
+        self.apply_pos_stencils(idx!(0, 0), self.dim, |s: PosStencilMut<Cell>| {
+            // This parallel run runs over all edges affected in the simulation domain.
+            // We also run over some boundary cells
+            // which we will anyway not use later.
+
             // This cell (1: pos, 0: x)  <-- s from pos x-neighbor.
             s.cell.s_nbs[1][0] = s_factor(s.neighbors[0]);
             // Pos. x-neighbor (0: neg, 0: x) <-- s from this cell.
@@ -389,35 +393,43 @@ impl Grid {
         });
 
         for _iter in 0..iterations {
-            self.apply_pos_stencils(|s: PosStencilMut<Cell>| {
-                if s.cell.s_tot_inv == 0.0 {
-                    debug!(
-                        log,
-                        "Cell with index: '{}' contains only fluid neighbors.",
-                        s.cell.index()
-                    );
-                    return;
-                }
+            self.apply_pos_stencils(
+                idx!(1, 1),
+                self.dim - idx!(1, 1),
+                |s: PosStencilMut<Cell>| {
+                    // This parallel run runs stencils over the simulation domain:
+                    // The `s.cell` will covers all cells in the simulation domain.
 
-                s.cell.div = 0.0;
-                for dir in 0..2 {
-                    s.cell.div += s.neighbors[dir].velocity.back[dir] - s.cell.velocity.back[dir]
-                }
-                s.cell.div_normed = s.cell.div * s.cell.s_tot_inv;
+                    if s.cell.s_tot_inv == 0.0 {
+                        debug!(
+                            log,
+                            "Cell with index: '{}' contains only fluid neighbors.",
+                            s.cell.index()
+                        );
+                        return;
+                    }
 
-                s.cell.pressure -= cp * s.cell.div_normed;
+                    s.cell.div = 0.0;
+                    for dir in 0..2 {
+                        s.cell.div +=
+                            s.neighbors[dir].velocity.back[dir] - s.cell.velocity.back[dir]
+                    }
+                    s.cell.div_normed = s.cell.div * s.cell.s_tot_inv;
 
-                // Velocity update own cell.
-                s.cell.velocity.back += r * cp * s.cell.s_nbs[0] * s.cell.div_normed;
+                    s.cell.pressure -= cp * s.cell.div_normed;
 
-                // Velocity update neighbors in x-direction.
-                // Solid cells have s_nbs[_] == 0.
-                s.neighbors[0].velocity.back[0] -= r * s.cell.s_nbs[1].x * s.cell.div_normed;
+                    // Velocity update own cell.
+                    s.cell.velocity.back += r * cp * s.cell.s_nbs[0] * s.cell.div_normed;
 
-                // Velocity update neighbors in z-direction.
-                // Solid cells have s_nbs[_] == 0.
-                s.neighbors[1].velocity.back[1] -= r * s.cell.s_nbs[1].y * s.cell.div_normed;
-            });
+                    // Velocity update neighbors in x-direction.
+                    // Solid cells have s_nbs[_] == 0.
+                    s.neighbors[0].velocity.back[0] -= r * s.cell.s_nbs[1].x * s.cell.div_normed;
+
+                    // Velocity update neighbors in z-direction.
+                    // Solid cells have s_nbs[_] == 0.
+                    s.neighbors[1].velocity.back[1] -= r * s.cell.s_nbs[1].y * s.cell.div_normed;
+                },
+            );
         }
     }
 
