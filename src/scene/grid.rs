@@ -311,21 +311,19 @@ impl Integrate for Grid {
 impl Grid {
     fn apply_pos_stencils<T>(&mut self, func: T)
     where
-        T: Fn(&mut PosStencilMut<Cell>) + Send + Sync,
+        T: Fn(PosStencilMut<Cell>) + Send + Sync,
     {
         const OFFSETS: [Index2; 4] = [idx!(0, 0), idx!(1, 0), idx!(0, 1), idx!(1, 1)];
 
         for offset in OFFSETS.iter() {
-            let mut stencils: Vec<_> = positive_stencils_mut(
+            positive_stencils_mut(
                 self.cells.as_mut_slice(),
                 self.dim,
                 Some(idx!(1, 1)),
                 Some(self.dim - idx!(1, 1)),
                 Some(*offset),
             )
-            .collect();
-
-            stencils.par_iter_mut().for_each(&func);
+            .for_each(&func);
         }
     }
 
@@ -355,7 +353,7 @@ impl Grid {
         };
 
         debug!(log, "Distribute all 's' factors for total sum.");
-        self.apply_pos_stencils(|s: &mut PosStencilMut<Cell>| {
+        self.apply_pos_stencils(|s: PosStencilMut<Cell>| {
             // This cell (1: pos, 0: x)  <-- s from pos x-neighbor.
             s.cell.s_nbs[1][0] = s_factor(s.neighbors[0]);
             // Pos. x-neighbor (0: neg, 0: x) <-- s from this cell.
@@ -383,18 +381,20 @@ impl Grid {
             } else {
                 warn!(
                     log,
-                    "Cell with index: '{}' contains only fluid neighbors.", c.index()
+                    "Cell with index: '{}' contains only fluid neighbors.",
+                    c.index()
                 );
                 0.0
             };
         });
 
         for _iter in 0..iterations {
-            self.apply_pos_stencils(|s: &mut PosStencilMut<Cell>| {
+            self.apply_pos_stencils(|s: PosStencilMut<Cell>| {
                 if s.cell.s_tot_inv == 0.0 {
                     debug!(
                         log,
-                        "Cell with index: '{}' contains only fluid neighbors.", s.cell.index()
+                        "Cell with index: '{}' contains only fluid neighbors.",
+                        s.cell.index()
                     );
                     return;
                 }

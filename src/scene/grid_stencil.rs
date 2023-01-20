@@ -1,4 +1,6 @@
 use crate::types::*;
+use rayon::iter::{IndexedParallelIterator, ParallelIterator};
+use rayon::slice::ParallelSliceMut;
 
 pub struct PosStencilMut<'a, T>
 where
@@ -11,40 +13,6 @@ where
     pub neighbors: [&'a mut T; 2],
 }
 
-pub trait PosStencil<T>
-where
-    T: Send + Sync
-{
-    fn positive_stencils_mut(
-        &mut self,
-        dim: Index2,
-        min: Option<Index2>,
-        max: Option<Index2>,
-        offset: Option<Index2>,
-    ) -> Box<dyn Iterator<Item = PosStencilMut<T>> + '_>;
-}
-
-impl<T> PosStencil<T> for Vec<T>
-where
-    T: Send + Sync
-{
-    fn positive_stencils_mut(
-        &mut self,
-        dim: Index2,
-        min: Option<Index2>,
-        max: Option<Index2>,
-        offset: Option<Index2>,
-    ) -> Box<dyn Iterator<Item = PosStencilMut<T>> + '_> {
-        return Box::new(positive_stencils_mut(
-            self.as_mut_slice(),
-            dim,
-            min,
-            max,
-            offset,
-        ));
-    }
-}
-
 /// First dimension is stored first (column-major).
 pub fn positive_stencils_mut<T>(
     data: &mut [T],
@@ -52,9 +20,9 @@ pub fn positive_stencils_mut<T>(
     min: Option<Index2>,
     max: Option<Index2>,
     offset: Option<Index2>, // Stencil offset added to min/max.
-) -> impl Iterator<Item = PosStencilMut<T>>
+) -> impl ParallelIterator<Item = PosStencilMut<T>>
 where
-    T: Send + Sync
+    T: Send + Sync,
 {
     assert!(
         dim > idx!(0, 0) && dim.iter().fold(1, std::ops::Mul::mul) == data.len(),
@@ -74,11 +42,11 @@ where
     let start_y = 0 + min.y * dim.x;
 
     let it = data[start_y..]
-        .chunks_exact_mut(2 * dim.x)
+        .par_chunks_exact_mut(2 * dim.x)
         .flat_map(move |row| {
             let (top, bot) = row.split_at_mut(dim.x);
-            let y0 = top[min.x..].chunks_exact_mut(2);
-            let y1 = bot[min.x..].chunks_exact_mut(2);
+            let y0 = top[min.x..].par_chunks_exact_mut(2);
+            let y1 = bot[min.x..].par_chunks_exact_mut(2);
 
             y0.zip(y1).map(|ys| match ys {
                 ([ref mut x0_y0, ref mut x1_y0], [ref mut x0_y1, _]) => PosStencilMut {
@@ -141,8 +109,6 @@ fn test_parallel() {
 
     assert!(v[(2, 0)] == 3);
     assert!(v[(2, 1)] == 6);
-
-    //positive_stencils_mut(v.as_mut_slice(), idx!(3, 2), None, None, None).par_iter();
 
 }
 
