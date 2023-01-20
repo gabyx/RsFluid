@@ -41,7 +41,7 @@ where
 
     let start_y = 0 + min.y * dim.x;
 
-    let it = data[start_y..]
+    return data[start_y..]
         .par_chunks_exact_mut(2 * dim.x)
         .flat_map(move |row| {
             let (top, bot) = row.split_at_mut(dim.x);
@@ -57,7 +57,6 @@ where
             })
         });
 
-    return it;
 }
 
 #[test]

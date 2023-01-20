@@ -36,6 +36,20 @@ To create the video with `30` frames use:
 ./create-video.sh 30
 ```
 
+# Parallel Implementation
+
+To implement the parallel version of
+[`solve_incompressibility`](src/scene/grid.rs#L330) we needed to split
+`grid.cells` successively into parts with an iterator chain until ending up with
+an iterator which produces stencils in the form
+[`PosStencilMut<Cell>`](src/scene/grid_stencil.rs#L44).
+This iterator can be converted to a parallel iterator by replacing the iterator chain with
+the parallel functions from `rayon`.
+
+The following picture illustrates the topology:
+
+ <img src="docs/simulation-grid.svg" alt="Simulation Grid" width="600px">
+
 # Videos
 
 ## Video Velocity
