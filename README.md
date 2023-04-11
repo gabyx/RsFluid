@@ -1,7 +1,11 @@
+<a href="https://www.rust-lang.org">
 <img src="docs/logo-mod.png" style="margin-left: 20pt; width: 250px; margin-top:30pt" align="right">
+</a>
 <h1>RsFluid</h1>
 
-**Disclosure: The material in this repository has not been reviewed, endorsed, or approved of by the Rust Foundation. For more information see the Rust Foundation Trademark Policy 2023.**
+**Disclosure: The material in this repository has not been reviewed, endorsed,
+or approved of by the Rust Foundation. For more information
+see the Rust Foundation Trademark Policy 2023.**
 
 A small demo project to learn Rust by implementing an Eulerian fluid simulation.
 This project has been inspired by
