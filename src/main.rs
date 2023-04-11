@@ -2,10 +2,10 @@ use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::fmt::Write;
 use std::fs::create_dir_all;
 
-use rustofluid::log::*;
-use rustofluid::scene::setup::{parse_args, setup_scene, CLIArgs};
-use rustofluid::scene::visualization::{save_plots, PlotParams, PlotParamsBuilder};
-use rustofluid::types::*;
+use rsfluid::log::*;
+use rsfluid::scene::setup::{parse_args, setup_scene, CLIArgs};
+use rsfluid::scene::visualization::{save_plots, PlotParams, PlotParamsBuilder};
+use rsfluid::types::*;
 
 fn assert_output_path(output: &str) {
     std::path::Path::new(&output)

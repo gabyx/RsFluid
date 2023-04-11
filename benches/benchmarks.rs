@@ -170,9 +170,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut dim2 = idx!(100, 100);
 
     let i = 4;
-    let a =  &dim;
+    let a = &dim;
     let b: &mut Index2 = &mut (*a);
-    b.x =3 ;
+    b.x = 3;
 
     let cell_generator = (0..dim[0]).cartesian_product(0..dim[1]).map(|(i, j)| C {
         i: i + j,

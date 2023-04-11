@@ -1378,6 +1378,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "456c603be3e8d448b072f410900c09faf164fbce2d480456f50eea6e25f9c848"
 
 [[package]]
+name = "rsfluid"
+version = "0.1.0"
+dependencies = [
+ "clap 4.0.32",
+ "colorgrad",
+ "compiletest_rs",
+ "criterion",
+ "derive_builder",
+ "float-cmp",
+ "indicatif",
+ "itertools",
+ "nalgebra",
+ "num-traits",
+ "plotters",
+ "rayon",
+ "simple-error",
+ "slog",
+ "slog-async",
+ "slog-term",
+]
+
+[[package]]
 name = "rustc_version"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1410,28 +1432,6 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys",
-]
-
-[[package]]
-name = "rustofluid"
-version = "0.1.0"
-dependencies = [
- "clap 4.0.32",
- "colorgrad",
- "compiletest_rs",
- "criterion",
- "derive_builder",
- "float-cmp",
- "indicatif",
- "itertools",
- "nalgebra",
- "num-traits",
- "plotters",
- "rayon",
- "simple-error",
- "slog",
- "slog-async",
- "slog-term",
 ]
 
 [[package]]

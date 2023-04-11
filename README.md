@@ -1,5 +1,5 @@
 <img src="docs/logo-mod.png" style="margin-left: 20pt; width: 250px; margin-top:30pt" align="right">
-<h1>RustoFluid</h1>
+<h1>RsFluid</h1>
 
 **Disclosure: The material in this repository has not been reviewed, endorsed, or approved of by the Rust Foundation. For more information see the Rust Foundation Trademark Policy 2023.**
 
@@ -26,7 +26,7 @@ with the different concepts in Rust.
 You can start the simulation with
 
 ```shell
-cargo run --release --bin rustofluid -- -e 10.0 -t "$timestep" --incompress-iters 100 --dim "400,200"
+cargo run --release --bin rsfluid -- -e 10.0 -t "$timestep" --incompress-iters 100 --dim "400,200"
 ```
 
 To install `cargo` use

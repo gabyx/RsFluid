@@ -10,7 +10,7 @@ shift 1
 timestep=$(echo "scale=3; 1.0/$frameRate" | bc)
 frameRateVideo="$frameRate"
 
-cargo run --release --bin rustofluid -- \
+cargo run --release --bin rsfluid -- \
     -e 15.0 \
     -t "$timestep" \
     --show-progress \
