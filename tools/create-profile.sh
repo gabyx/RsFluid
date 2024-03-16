@@ -2,7 +2,8 @@
 set -u
 set -e
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+cd "$ROOT_DIR"
 
 function cleanup() {
     echo "Killall rsfluid."
@@ -13,7 +14,7 @@ function cleanup() {
 
 trap cleanup EXIT
 
-scripts="$DIR/profile"
+scripts="$ROOT_DIR/profile"
 
 cd "$DIR"
 cargo build --profile release-bench --bin rsfluid

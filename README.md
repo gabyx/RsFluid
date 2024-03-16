@@ -4,8 +4,8 @@
 <h1>RsFluid</h1>
 
 **Disclosure: The material in this repository has not been reviewed, endorsed,
-or approved of by the Rust Foundation. For more information
-see the Rust Foundation Trademark Policy 2023.**
+or approved of by the Rust Foundation. For more information see the Rust
+Foundation Trademark Policy 2023.**
 
 A small demo project to learn Rust by implementing an Eulerian fluid simulation.
 This project has been inspired by
@@ -17,7 +17,8 @@ beautiful (😨) boundaries of your simulation domain, data structures etc.
 
 The simulation is implemented with the same procedure as as in
 [fluid.sim](https://github.com/matthias-research/pages/blob/master/tenMinutePhysics/17-fluidSim.html)
-with some additional data structures and better encapsulation to support the computation.
+with some additional data structures and better encapsulation to support the
+computation.
 
 # Introduction
 
@@ -33,13 +34,25 @@ You can start the simulation with
 cargo run --release --bin rsfluid -- -e 10.0 -t "$timestep" --incompress-iters 100 --dim "400,200"
 ```
 
+or
+
+```shell
+just run --release --bin rsfluid -- -e 10.0 -t "$timestep" --incompress-iters 100 --dim "400,200"
+```
+
 To install `cargo` use
 [this help here](https://doc.rust-lang.org/cargo/getting-started/installation.html).
 
 To create the video with `30` frames use:
 
 ```shell
-./create-video.sh 30
+./tools/create-video.sh 30
+```
+
+or
+
+```shell
+just video 30
 ```
 
 # Parallel Implementation

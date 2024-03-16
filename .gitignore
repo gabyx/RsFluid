@@ -2,3 +2,4 @@ target
 .DS_Store
 *.mp4
 frames/*.png
+.direnv
